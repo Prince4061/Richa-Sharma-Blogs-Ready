@@ -121,7 +121,8 @@ export async function uploadImage(file) {
 
     // Step 3: Confirm upload
     if (strategy.confirmRequired) {
-      const confirmRes = await fetch(`${INSFORGE_BASE}${strategy.confirmUrl}`, {
+      const INSFORGE_HOST = 'https://iznwab88.us-east.insforge.app';
+      const confirmRes = await fetch(`${INSFORGE_HOST}${strategy.confirmUrl}`, {
         method: 'POST',
         headers: { ...authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ size: file.size, contentType: file.type }),
