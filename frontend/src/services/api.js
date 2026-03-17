@@ -85,19 +85,34 @@ export async function signup(email, password, name) {
   return data;
 }
 
-// ═══════ IMAGE UPLOAD ═══════
+// ═══════ IMAGE UPLOAD (Direct to Insforge Storage) ═══════
+
+const INSFORGE_BASE = 'https://iznwab88.us-east.insforge.app/api';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3Mjc2NTB9.U75HsMPjtg8jK9kRsReJ6tnqWCM--GaGoPhSvMX4q-s';
 
 export async function uploadImage(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const token = getAuthToken();
-  const res = await axios.post('/api/upload', formData, {
+  const token = getAuthToken() || ANON_KEY;
+  const res = await fetch(`${INSFORGE_BASE}/storage/buckets/images/objects/auto`, {
+    method: 'POST',
     headers: {
-      Authorization: token ? `Bearer ${token}` : '',
+      Authorization: `Bearer ${token}`,
     },
+    body: formData,
   });
-  return res.data;
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Upload failed with status ${res.status}`);
+  }
+
+  const data = await res.json();
+  // Handle Insforge response shape: { data: { url, key } } or { url, key }
+  const result = data.data || data;
+  if (!result.url) throw new Error('Upload succeeded but no URL returned');
+  return { url: result.url, key: result.key };
 }
 
 export default api;
