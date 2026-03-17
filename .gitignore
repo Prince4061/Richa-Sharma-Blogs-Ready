@@ -1,0 +1,12 @@
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker files (VPS ke liye hai, GitHub par zaroori nahi)
+docker-compose.yml
+nginx.conf
+
+# Editor temp files
+*.tmp
+*.log

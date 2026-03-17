@@ -1,0 +1,409 @@
+/* App-specific styles (editor, login, story page) */
+
+/* ─── Auth Modal Input ─── */
+.auth-input {
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  border-radius: 6px;
+  outline: none;
+  font-family: var(--font-main);
+  transition: border-color 0.3s ease;
+}
+
+.auth-input:focus {
+  border-color: var(--accent-neon);
+  box-shadow: 0 0 5px var(--accent-glow);
+}
+
+/* ─── Story Reading Page ─── */
+.story-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.story-header h1 {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-hindi), var(--font-main);
+}
+
+.story-main-image {
+  width: 100%;
+  height: 400px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(234, 255, 0, 0.2);
+}
+
+.story-article {
+  font-family: var(--font-hindi), var(--font-main);
+  font-size: 1.15rem;
+  color: #dcdcdc;
+  line-height: 1.8;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.story-article p {
+  margin-bottom: 1.5rem;
+}
+
+.story-article img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 20px 0;
+  display: block;
+  border: 1px solid var(--border-color);
+}
+
+/* Category-Based Font Styles for Reading Page */
+.story-article.cat-comics {
+  font-family: var(--font-comic-body, 'Comic Neue', cursive);
+  font-size: 1.15rem;
+  line-height: 1.9;
+}
+
+.story-article.cat-comics h1,
+.story-article.cat-comics h2,
+.story-article.cat-comics h3 {
+  font-family: var(--font-comic, 'Bangers', cursive) !important;
+  letter-spacing: 2px;
+  color: #ff6b35;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.story-article.cat-comics .story-header h1 {
+  font-family: var(--font-comic, 'Bangers', cursive) !important;
+  font-size: 3.5rem !important;
+  letter-spacing: 3px;
+  color: #ff6b35;
+  text-shadow: 4px 4px 0 rgba(255, 107, 53, 0.3), -1px -1px 0 #000;
+  line-height: 1.1;
+}
+
+.story-article.cat-story,
+.story-article.cat-drama {
+  font-family: var(--font-story, 'Lora', serif);
+  font-size: 1.18rem;
+  line-height: 1.9;
+  color: #e0ddd8;
+}
+
+.story-article.cat-drama .story-header h1 {
+  font-family: var(--font-story, 'Lora', serif) !important;
+  font-style: italic;
+  color: #e74c3c;
+}
+
+.story-article.cat-series {
+  font-family: var(--font-hindi, 'Hind', sans-serif);
+  font-size: 1.15rem;
+  line-height: 1.85;
+}
+
+.story-article.cat-series h1,
+.story-article.cat-series h2 {
+  font-family: var(--font-series, 'Rajdhani', sans-serif) !important;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #3498db;
+}
+
+.story-article.cat-series .story-header h1 {
+  font-family: var(--font-series, 'Rajdhani', sans-serif) !important;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #3498db;
+}
+
+.story-article.cat-article {
+  font-family: var(--font-article, 'Merriweather', serif);
+  font-size: 1.1rem;
+  line-height: 2;
+  color: #e0ddd8;
+}
+
+.story-article.cat-article .story-header h1 {
+  font-family: var(--font-article, 'Merriweather', serif) !important;
+}
+
+/* ─── Comments ─── */
+.comments-section {
+  max-width: 800px;
+  margin: 4rem auto 0;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.comment-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border-left: 3px solid var(--accent-neon);
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.comment-header strong {
+  color: var(--text-primary);
+}
+
+.new-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.new-comment-form textarea,
+.new-comment-form input {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px;
+  border-radius: 6px;
+  font-family: var(--font-main);
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.new-comment-form textarea:focus,
+.new-comment-form input:focus {
+  border-color: var(--accent-neon);
+  box-shadow: 0 0 5px var(--accent-glow);
+}
+
+/* ─── Editor Page ─── */
+.editor-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: var(--bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.input-title {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-primary);
+  font-size: 2.5rem;
+  font-family: var(--font-hindi), var(--font-main);
+  outline: none;
+  padding: 10px 0;
+  margin-bottom: 1.5rem;
+  transition: border-color 0.3s;
+}
+
+.input-title:focus {
+  border-bottom-color: var(--accent-neon);
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 1rem;
+  padding: 10px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.toolbar button {
+  background: var(--bg-hover);
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-main);
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.toolbar button:hover {
+  border-color: var(--accent-neon);
+  color: var(--accent-neon);
+}
+
+.toolbar select {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  padding: 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.toolbar select:focus {
+  border-color: var(--accent-neon);
+}
+
+.content-editor {
+  min-height: 400px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  font-family: var(--font-hindi), var(--font-main);
+  font-size: 1.15rem;
+  line-height: 1.8;
+  color: #dcdcdc;
+  outline: none;
+}
+
+.content-editor:focus {
+  border-color: var(--accent-neon);
+  box-shadow: 0 0 10px rgba(234, 255, 0, 0.1);
+}
+
+.content-editor p {
+  margin-bottom: 1.5rem;
+}
+
+.content-editor img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 20px 0;
+  display: block;
+  border: 1px dashed var(--accent-neon);
+}
+
+/* ─── Login Page ─── */
+.login-container {
+  max-width: 400px;
+  margin: 10vh auto;
+  padding: 2.5rem;
+  text-align: center;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 6px;
+  font-family: var(--font-main);
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.input-group input:focus {
+  border-color: var(--accent-neon);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.error-msg {
+  color: #ff4a4a;
+  font-size: 0.85rem;
+  display: none;
+  margin-top: -10px;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+  .story-header h1 {
+    font-size: 2.2rem;
+  }
+
+  .story-article {
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .story-main-image {
+    max-height: 300px;
+    border-radius: 8px;
+  }
+
+  .comments-list {
+    padding: 1.5rem;
+  }
+
+  .editor-container {
+    padding: 1.2rem;
+  }
+
+  .editor-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .input-title {
+    font-size: 1.5rem;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .toolbar button,
+  .toolbar select {
+    font-size: 0.9rem;
+    padding: 6px;
+  }
+
+  .content-editor {
+    min-height: 250px;
+    padding: 0.8rem;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .story-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .story-article {
+    padding: 1rem;
+  }
+
+  .story-main-image {
+    max-height: 250px;
+  }
+}
