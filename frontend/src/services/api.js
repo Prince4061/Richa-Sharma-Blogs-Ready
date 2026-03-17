@@ -88,7 +88,7 @@ export async function signup(email, password, name) {
 // ═══════ IMAGE UPLOAD (Direct to Insforge Storage - upload-strategy flow) ═══════
 
 const INSFORGE_BASE = 'https://iznwab88.us-east.insforge.app/api';
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3Mjc2NTB9.U75HsMPjtg8jK9kRsReJ6tnqWCM--GaGoPhSvMX4q-s';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjkwOTJ9.jHZvO6BAfkHlewtgSj8mZ9z6a4Uk2yABAXgkhRqmWPI';
 
 export async function uploadImage(file) {
   const token = getAuthToken() || ANON_KEY;
