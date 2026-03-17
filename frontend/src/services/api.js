@@ -85,34 +85,74 @@ export async function signup(email, password, name) {
   return data;
 }
 
-// ═══════ IMAGE UPLOAD (Direct to Insforge Storage) ═══════
+// ═══════ IMAGE UPLOAD (Direct to Insforge Storage - upload-strategy flow) ═══════
 
 const INSFORGE_BASE = 'https://iznwab88.us-east.insforge.app/api';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3Mjc2NTB9.U75HsMPjtg8jK9kRsReJ6tnqWCM--GaGoPhSvMX4q-s';
 
 export async function uploadImage(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-
   const token = getAuthToken() || ANON_KEY;
-  const res = await fetch(`${INSFORGE_BASE}/storage/buckets/images/objects/auto`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  const authHeader = { Authorization: `Bearer ${token}` };
 
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || `Upload failed with status ${res.status}`);
+  // Step 1: Get upload strategy
+  const strategyRes = await fetch(`${INSFORGE_BASE}/storage/buckets/images/upload-strategy`, {
+    method: 'POST',
+    headers: { ...authHeader, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  if (!strategyRes.ok) {
+    const err = await strategyRes.json().catch(() => ({}));
+    throw new Error(err.message || `Strategy fetch failed: ${strategyRes.status}`);
+  }
+  const strategy = await strategyRes.json();
+
+  // Step 2: Upload the file
+  if (strategy.method === 'presigned') {
+    // S3 presigned upload
+    const s3Form = new FormData();
+    Object.entries(strategy.fields || {}).forEach(([k, v]) => s3Form.append(k, v));
+    s3Form.append('file', file);
+    const s3Res = await fetch(strategy.uploadUrl, { method: 'POST', body: s3Form });
+    if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
+
+    // Step 3: Confirm upload
+    if (strategy.confirmRequired) {
+      const confirmRes = await fetch(`${INSFORGE_BASE}${strategy.confirmUrl}`, {
+        method: 'POST',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size: file.size, contentType: file.type }),
+      });
+      if (!confirmRes.ok) throw new Error('Upload confirmation failed');
+      const confirmed = await confirmRes.json();
+      const url = confirmed.url?.startsWith('http')
+        ? confirmed.url
+        : `${INSFORGE_BASE}${confirmed.url}`;
+      return { url, key: confirmed.key };
+    }
+  } else {
+    // Local storage direct upload
+    const formData = new FormData();
+    formData.append('file', file);
+    const uploadRes = await fetch(
+      strategy.uploadUrl?.startsWith('http')
+        ? strategy.uploadUrl
+        : `${INSFORGE_BASE.replace('/api', '')}${strategy.uploadUrl}`,
+      { method: 'PUT', headers: authHeader, body: formData }
+    );
+    if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+    const result = await uploadRes.json();
+    const url = result.url?.startsWith('http')
+      ? result.url
+      : `https://iznwab88.us-east.insforge.app${result.url}`;
+    return { url, key: result.key };
   }
 
-  const data = await res.json();
-  // Handle Insforge response shape: { data: { url, key } } or { url, key }
-  const result = data.data || data;
-  if (!result.url) throw new Error('Upload succeeded but no URL returned');
-  return { url: result.url, key: result.key };
+  throw new Error('Upload failed: unknown storage method');
 }
 
 export default api;
+
