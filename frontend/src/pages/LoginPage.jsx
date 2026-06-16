@@ -17,7 +17,7 @@ export default function LoginPage() {
 
     try {
       const data = await login(email, password);
-      if (data.user && data.user.email === ADMIN_EMAIL) {
+      if (data.user && (data.user.role === 'admin' || data.user.email === ADMIN_EMAIL)) {
         navigate('/editor');
       } else {
         throw new Error('Unauthorized: You are not an admin.');

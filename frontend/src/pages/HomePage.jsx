@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import StoryCard from '../components/StoryCard';
-import { getPosts } from '../services/api';
+import { getPosts, getBookmarks } from '../services/api';
+import { getCurrentUser } from '../services/auth';
 
 const CATEGORIES = [
   { key: 'story', id: 'recent', title: 'Latest Stories', empty: 'No stories published yet.' },
@@ -8,10 +9,12 @@ const CATEGORIES = [
   { key: 'series', id: 'series', title: 'Latest Series', empty: 'No series published yet.' },
   { key: 'comics', id: 'comics', title: 'Latest Comics', empty: 'No comics published yet.' },
   { key: 'drama', id: 'drama', title: 'Latest Drama', empty: 'No drama published yet.' },
+  { key: 'wgws', id: 'wgws', title: 'Latest WGWS', empty: 'No WGWS published yet.' },
 ];
 
 export default function HomePage() {
   const [data, setData] = useState({});
+  const [bookmarks, setBookmarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -26,6 +29,12 @@ export default function HomePage() {
           dataMap[cat.key] = results[i];
         });
         setData(dataMap);
+
+        const user = getCurrentUser();
+        if (user) {
+          const bookmarksData = await getBookmarks();
+          setBookmarks(bookmarksData || []);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -75,6 +84,21 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Bookmarks Section */}
+      {bookmarks.length > 0 && (
+        <section id="bookmarks" style={{ marginTop: '2rem', marginBottom: '3rem' }}>
+          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>★ Your Bookmarked Stories</span>
+            <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>({bookmarks.length})</span>
+          </h2>
+          <div className="story-grid animate-fade-in">
+            {bookmarks.map((item, idx) => (
+              <StoryCard key={item.id} story={item} index={idx} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Category Grids */}
       {CATEGORIES.map((cat) => (

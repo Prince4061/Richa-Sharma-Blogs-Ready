@@ -34,7 +34,7 @@ export function getAuthToken() {
 
 export function isAdmin() {
   const user = getCurrentUser();
-  return user && user.email === ADMIN_EMAIL;
+  return user && (user.role === 'admin' || user.email === ADMIN_EMAIL);
 }
 
 export { ADMIN_EMAIL };

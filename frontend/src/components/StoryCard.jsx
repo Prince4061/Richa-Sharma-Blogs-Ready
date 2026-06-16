@@ -19,7 +19,7 @@ export default function StoryCard({ story, index = 0 }) {
     'https://images.unsplash.com/photo-1455390582262-044cdead2708?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80';
 
   const category = story.category || 'story';
-  const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
+  const categoryLabel = category === 'wgws' ? 'WGWS' : category.charAt(0).toUpperCase() + category.slice(1);
 
   const handleDelete = async (e) => {
     e.stopPropagation();

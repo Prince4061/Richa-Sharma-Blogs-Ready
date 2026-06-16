@@ -217,18 +217,44 @@
 
             <!-- Editor Toolbar -->
             <div class="toolbar">
-                <button onclick="format('bold')"><b>B</b></button>
-                <button onclick="format('italic')"><i>I</i></button>
-                <button onclick="format('underline')"><u>U</u></button>
+                <button onclick="format('bold')" title="Bold"><b>B</b></button>
+                <button onclick="format('italic')" title="Italic"><i>I</i></button>
+                <button onclick="format('underline')" title="Underline"><u>U</u></button>
                 |
-                <button onclick="format('justifyLeft')">Left</button>
-                <button onclick="format('justifyCenter')">Center</button>
+                <button onclick="format('justifyLeft')" title="Left Align">Left</button>
+                <button onclick="format('justifyCenter')" title="Center Align">Center</button>
                 |
-                <select onchange="format('formatBlock', this.value)">
+                <select onchange="format('formatBlock', this.value)" title="Formatting Block">
                     <option value="P">Paragraph</option>
+                    <option value="H1">Heading 1</option>
                     <option value="H2">Heading 2</option>
                     <option value="H3">Heading 3</option>
+                    <option value="H4">Heading 4</option>
+                    <option value="blockquote">Quote Block</option>
                 </select>
+                <select title="Font Size" onchange="if(this.value){format('fontSize', this.value); this.value='';}">
+                    <option value="">Font Size</option>
+                    <option value="2">Small</option>
+                    <option value="3">Normal</option>
+                    <option value="4">Medium</option>
+                    <option value="5">Large</option>
+                    <option value="6">Extra Large</option>
+                </select>
+                <select title="Text Color" onchange="if(this.value){format('foreColor', this.value); this.value='';}">
+                    <option value="">Text Color</option>
+                    <option value="#ffffff" style="color: #ffffff; background: #000;">White</option>
+                    <option value="#eaff00" style="color: #eaff00; background: #000;">Neon Yellow</option>
+                    <option value="#2ecc71" style="color: #2ecc71; background: #000;">Neon Green</option>
+                    <option value="#3498db" style="color: #3498db; background: #000;">Neon Blue</option>
+                    <option value="#ff4a4a" style="color: #ff4a4a; background: #000;">Neon Red</option>
+                </select>
+                |
+                <button onclick="format('insertUnorderedList')" title="Bullet List">• List</button>
+                <button onclick="format('insertOrderedList')" title="Numbered List">1. List</button>
+                <button onclick="format('insertHorizontalRule')" title="Horizontal Line">― Divider</button>
+                |
+                <button onclick="format('undo')" title="Undo">Undo</button>
+                <button onclick="format('redo')" title="Redo">Redo</button>
                 |
                 <!-- Image Insertion inside Content -->
                 <button id="inlineImageBtn" style="color: var(--accent-neon); font-weight: bold;"

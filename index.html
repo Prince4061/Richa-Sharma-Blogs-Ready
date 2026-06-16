@@ -216,6 +216,19 @@
     <script src="db.js"></script>
     <script src="app.js"></script>
     <script>
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             const storyGrid = document.getElementById('recentStoriesGrid');
             const articleGrid = document.getElementById('recentArticlesGrid');
@@ -290,10 +303,10 @@
                     <div class="story-image" style="background-image: url('${imgUrl}'); background-position: center; border-bottom: 1px solid var(--border-color);"></div>
                     <div class="story-content">
                         <span class="story-tag">${item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : 'Story'}</span>
-                        <h3 class="story-title">${item.title}</h3>
-                        <p class="story-excerpt">${item.excerpt || ''}</p>
+                        <h3 class="story-title">${escapeHTML(item.title)}</h3>
+                        <p class="story-excerpt">${escapeHTML(item.excerpt || '')}</p>
                         <div class="story-meta">
-                            <span>${formattedDate} • ${item.profiles?.name || 'Admin'}</span>
+                            <span>${formattedDate} • ${escapeHTML(item.profiles?.name || 'Admin')}</span>
                             ${deleteBtnHtml}
                         </div>
                     </div>

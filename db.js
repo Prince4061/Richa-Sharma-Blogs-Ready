@@ -1,26 +1,20 @@
-const INSFORGE_API_BASE = 'https://iznwab88.us-east.insforge.app/api';
-
-// Anon key for public read access (generated, never expires)
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTEzODV9.Xv-dQLWzgoirFBpDAyyLzFq4Gn1rohv2oOnFOionhLE';
+// ─── Vanilla DB Service for SQLite Backend ───
+const API_BASE = '/api';
 
 /**
  * Core API fetch helper.
- * Automatically attaches Bearer token (user session or anon key).
- * For FormData uploads, does NOT set Content-Type (browser sets it with boundary).
+ * Automatically attaches Bearer token if logged in.
  */
 async function apiFetch(endpoint, method = 'GET', body = null, isFormData = false) {
     const token = localStorage.getItem('auth_token');
     const headers = {};
 
-    // Use user token if logged in, otherwise fall back to anon key
-    headers['Authorization'] = `Bearer ${token || ANON_KEY}`;
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
 
     if (!isFormData && body) {
         headers['Content-Type'] = 'application/json';
-        // Only add Prefer header for DB POST/PATCH (not storage)
-        if ((method === 'POST' || method === 'PATCH') && endpoint.startsWith('/database')) {
-            headers['Prefer'] = 'return=representation';
-        }
     }
 
     const options = { method, headers };
@@ -28,18 +22,16 @@ async function apiFetch(endpoint, method = 'GET', body = null, isFormData = fals
         options.body = isFormData ? body : JSON.stringify(body);
     }
 
-    const res = await fetch(`${INSFORGE_API_BASE}${endpoint}`, options);
+    const res = await fetch(`${API_BASE}${endpoint}`, options);
 
-    // 204 = success with no content (DELETE)
     if (res.status === 204) return null;
 
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
         const errorMessage = data?.message || data?.error || `API Error: ${res.status}`;
-
-        // Handle expired JWT session — log user out
-        if (typeof errorMessage === 'string' && errorMessage.toLowerCase().includes('jwt expired')) {
+        
+        if (typeof errorMessage === 'string' && errorMessage.toLowerCase().includes('expired')) {
             localStorage.removeItem('auth_token');
             localStorage.removeItem('auth_refresh');
             localStorage.removeItem('auth_user');
@@ -56,43 +48,36 @@ async function apiFetch(endpoint, method = 'GET', body = null, isFormData = fals
 
 // Get all content by category (story, article, series, comics, drama)
 async function getStories(category = 'story') {
-    return await apiFetch(
-        `/database/records/stories?category=eq.${category}&select=*,profiles(name,avatar_url)&order=created_at.desc`
-    );
+    return await apiFetch(`/posts?category=${category}`);
 }
 
 // Get a single story/article by ID
 async function getStory(id) {
-    const data = await apiFetch(
-        `/database/records/stories?id=eq.${id}&select=*,profiles(name,avatar_url)`
-    );
-    return data && data.length > 0 ? data[0] : null;
+    return await apiFetch(`/posts/${id}`);
 }
 
 // Get comments for a story (newest first)
 async function getComments(storyId) {
-    return await apiFetch(
-        `/database/records/comments?story_id=eq.${storyId}&select=*,profiles(name,avatar_url)&order=created_at.desc`
-    );
+    return await apiFetch(`/comments/${storyId}`);
 }
 
-// Create a new story/article (admin only — RLS enforces authentication)
+// Create a new story/article (admin only)
 async function createStory(storyData) {
     const user = getCurrentUser();
     if (!user) throw new Error('Not logged in. Please login first.');
 
     storyData.author_id = user.id;
-    return await apiFetch('/database/records/stories', 'POST', [storyData]);
+    return await apiFetch('/posts', 'POST', storyData);
 }
 
-// Delete a story (RLS enforces owner-only delete)
+// Delete a story
 async function deleteStory(id) {
     const user = getCurrentUser();
     if (!user) throw new Error('Not logged in.');
-    return await apiFetch(`/database/records/stories?id=eq.${id}`, 'DELETE');
+    return await apiFetch(`/posts/${id}`, 'DELETE');
 }
 
-// Add a comment (RLS enforces logged-in user)
+// Add a comment
 async function addComment(storyId, content) {
     const user = getCurrentUser();
     if (!user) throw new Error('Please login to comment.');
@@ -102,32 +87,30 @@ async function addComment(storyId, content) {
         user_id: user.id,
         content: content
     };
-    return await apiFetch('/database/records/comments', 'POST', [commentData]);
+    return await apiFetch('/comments', 'POST', commentData);
 }
 
 /** ============ STORAGE API ============ **/
 
-// Upload an image to InsForge storage (auto-generates unique filename)
+// Upload an image to Flask backend static uploads
 async function uploadImage(file) {
-    // /auto endpoint generates a unique key automatically (uploadAuto)
-    const endpoint = `/storage/buckets/images/objects/auto`;
-
     const formData = new FormData();
     formData.append('file', file);
 
-    const data = await apiFetch(endpoint, 'POST', formData, true);
-
-    // Handle various response shapes from the API
+    const data = await apiFetch('/upload', 'POST', formData, true);
     if (data && data.url) {
         return { url: data.url, key: data.key };
     }
-    if (data && data.data && data.data.url) {
-        return { url: data.data.url, key: data.data.key };
-    }
-    if (Array.isArray(data) && data[0] && data[0].url) {
-        return { url: data[0].url, key: data[0].key };
-    }
+    throw new Error('Image upload failed.');
+}
 
-    console.error('Unexpected upload response:', JSON.stringify(data));
-    throw new Error('Image upload failed — server returned unexpected response. Check console for details.');
+// Session Helpers
+function getCurrentUser() {
+    const userStr = localStorage.getItem('auth_user');
+    if (!userStr) return null;
+    try {
+        return JSON.parse(userStr);
+    } catch {
+        return null;
+    }
 }

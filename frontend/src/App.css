@@ -130,6 +130,18 @@
   font-family: var(--font-article, 'Merriweather', serif) !important;
 }
 
+.story-article.cat-wgws {
+  font-family: var(--font-article, 'Merriweather', serif);
+  font-size: 1.1rem;
+  line-height: 2;
+  color: #e0ddd8;
+}
+
+.story-article.cat-wgws .story-header h1 {
+  font-family: var(--font-article, 'Merriweather', serif) !important;
+  color: var(--accent-neon);
+}
+
 /* ─── Comments ─── */
 .comments-section {
   max-width: 800px;
@@ -406,4 +418,74 @@
   .story-main-image {
     max-height: 250px;
   }
+}
+
+/* Styling for lists, blockquotes, and dividers inside story articles and editor */
+.story-article ul,
+.content-editor ul {
+  list-style-type: disc;
+  margin-left: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.story-article ol,
+.content-editor ol {
+  list-style-type: decimal;
+  margin-left: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.story-article li,
+.content-editor li {
+  margin-bottom: 0.5rem;
+  line-height: 1.8;
+}
+
+.story-article blockquote,
+.content-editor blockquote {
+  border-left: 4px solid var(--accent-neon);
+  padding-left: 1.5rem;
+  margin: 1.5rem 0;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.story-article hr,
+.content-editor hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 2.2rem 0;
+}
+
+/* Heading styles inside story articles and editor */
+.story-article h1,
+.content-editor h1 {
+  font-size: 2.2rem;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.story-article h2,
+.content-editor h2 {
+  font-size: 1.8rem;
+  margin-top: 1.8rem;
+  margin-bottom: 0.9rem;
+  font-weight: 600;
+}
+
+.story-article h3,
+.content-editor h3 {
+  font-size: 1.5rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.8rem;
+  font-weight: 600;
+}
+
+.story-article h4,
+.content-editor h4 {
+  font-size: 1.25rem;
+  margin-top: 1.2rem;
+  margin-bottom: 0.7rem;
+  font-weight: 600;
 }

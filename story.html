@@ -332,6 +332,19 @@
     <script src="db.js"></script>
     <script src="app.js"></script>
     <script>
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             const params = new URLSearchParams(window.location.search);
             const storyId = params.get('id');
@@ -367,10 +380,10 @@
 
                 let html = `
                     <div class="story-header" style="text-align: center;">
-                        <span class="story-tag" style="margin-bottom: 15px; display: inline-block;">${story.category || 'Story'}</span>
-                        <h1 class="neon-text">${story.title}</h1>
+                        <span class="story-tag" style="margin-bottom: 15px; display: inline-block;">${escapeHTML(story.category || 'Story')}</span>
+                        <h1 class="neon-text">${escapeHTML(story.title)}</h1>
                         <p class="story-meta" style="justify-content: center; gap: 20px; font-size: 1rem; border: none; padding: 0;">
-                            <span>By ${authorName}</span>
+                            <span>By ${escapeHTML(authorName)}</span>
                             <span>•</span>
                             <span>${formattedDate}</span>
                         </p>
@@ -474,13 +487,12 @@
                     div.className = 'comment-box';
                     div.innerHTML = `
                         <div class="comment-header">
-                            <strong>${comment.profiles?.name || 'Anonymous User'}</strong>
+                            <strong>${escapeHTML(comment.profiles?.name || 'Anonymous User')}</strong>
                             <span>${formattedDate}</span>
                         </div>
-                        <div class="comment-body" style="font-family: var(--font-hindi), var(--font-main);">
-                            ${comment.content.replace(/\n/g, '<br>')}
-                        </div>
+                        <div class="comment-body" style="font-family: var(--font-hindi), var(--font-main); white-space: pre-line;"></div>
                     `;
+                    div.querySelector('.comment-body').textContent = comment.content;
                     commentsList.appendChild(div);
                 });
             } catch (err) {

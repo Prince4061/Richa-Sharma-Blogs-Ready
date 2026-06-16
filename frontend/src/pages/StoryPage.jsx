@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getPost, getComments, addComment, deletePost } from '../services/api';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { getPost, getComments, addComment, deletePost, toggleBookmark } from '../services/api';
 import { getCurrentUser, isAdmin } from '../services/auth';
 import AuthModal from '../components/AuthModal';
 
 export default function StoryPage() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const [story, setStory] = useState(null);
   const [comments, setComments] = useState([]);
@@ -15,6 +16,7 @@ export default function StoryPage() {
   const [posting, setPosting] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
 
   const user = getCurrentUser();
   const admin = isAdmin();
@@ -42,6 +44,7 @@ export default function StoryPage() {
           setError('Story not found!');
         } else {
           setStory(data);
+          setBookmarked(!!data.is_bookmarked);
           document.title = `${data.title} - Richa Sharma`;
         }
       } catch (err) {
@@ -59,7 +62,7 @@ export default function StoryPage() {
       try {
         await deletePost(id);
         alert('Deleted successfully!');
-        window.location.href = '/';
+        navigate('/');
       } catch (err) {
         alert('Delete failed: ' + (err.response?.data?.error || err.message));
       }
@@ -78,6 +81,19 @@ export default function StoryPage() {
       alert('Failed to post comment: ' + (err.response?.data?.error || err.message));
     } finally {
       setPosting(false);
+    }
+  };
+
+  const handleBookmarkToggle = async () => {
+    if (!user) {
+      setShowAuth(true);
+      return;
+    }
+    try {
+      const res = await toggleBookmark(id);
+      setBookmarked(res.bookmarked);
+    } catch (err) {
+      alert('Failed to bookmark: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -150,7 +166,7 @@ export default function StoryPage() {
           {/* Header */}
           <div className="story-header" style={{ textAlign: 'center' }}>
             <span className="story-tag" style={{ marginBottom: 15, display: 'inline-block' }}>
-              {story.category || 'Story'}
+              {story.category === 'wgws' ? 'WGWS' : (story.category ? story.category.charAt(0).toUpperCase() + story.category.slice(1) : 'Story')}
             </span>
             <h1 className="neon-text">{story.title}</h1>
             <p
@@ -162,7 +178,14 @@ export default function StoryPage() {
               <span>{formattedDate}</span>
             </p>
             {admin && (
-              <div style={{ marginTop: 20 }}>
+              <div style={{ marginTop: 20, display: 'flex', gap: 15, justifyContent: 'center' }}>
+                <button
+                  onClick={() => navigate(`/editor?edit=${id}`)}
+                  className="neon-btn"
+                  style={{ padding: '5px 15px' }}
+                >
+                  Edit Post
+                </button>
                 <button
                   onClick={handleDelete}
                   className="neon-btn"
@@ -182,10 +205,17 @@ export default function StoryPage() {
           {/* Content */}
           <div dangerouslySetInnerHTML={{ __html: story.content }} />
 
-          {/* Share */}
-          <div style={{ marginTop: '3rem', textAlign: 'center' }}>
+          {/* Share & Bookmark */}
+          <div style={{ marginTop: '3rem', display: 'flex', gap: 15, justifyContent: 'center' }}>
             <button className="neon-btn" onClick={shareStory}>
               Share This Story
+            </button>
+            <button
+              className="neon-btn"
+              onClick={handleBookmarkToggle}
+              style={bookmarked ? { background: 'var(--accent-neon)', color: 'var(--bg-primary)' } : {}}
+            >
+              {bookmarked ? '★ Bookmarked' : '☆ Bookmark'}
             </button>
           </div>
         </article>
@@ -219,11 +249,10 @@ export default function StoryPage() {
                     </div>
                     <div
                       className="comment-body"
-                      style={{ fontFamily: 'var(--font-hindi), var(--font-main)' }}
-                      dangerouslySetInnerHTML={{
-                        __html: comment.content.replace(/\n/g, '<br>'),
-                      }}
-                    />
+                      style={{ fontFamily: 'var(--font-hindi), var(--font-main)', whiteSpace: 'pre-line' }}
+                    >
+                      {comment.content}
+                    </div>
                   </div>
                 );
               })

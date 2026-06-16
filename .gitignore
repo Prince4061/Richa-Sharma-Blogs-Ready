@@ -10,3 +10,9 @@ nginx.conf
 # Editor temp files
 *.tmp
 *.log
+
+# Database and cache
+backend/database.db
+backend/__pycache__/
+__pycache__/
+*.db

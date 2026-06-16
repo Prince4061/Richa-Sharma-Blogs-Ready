@@ -109,7 +109,7 @@
 
             try {
                 const data = await loginWithPassword(email, password);
-                if (data.user && data.user.email === ADMIN_EMAIL) {
+                if (data.user && (data.user.role === 'admin' || data.user.email === ADMIN_EMAIL)) {
                     window.location.href = 'editor.html';
                 } else {
                     throw new Error('Unauthorized: You are not an admin.');

@@ -1,50 +1,30 @@
-const INSFORGE_API = 'https://iznwab88.us-east.insforge.app/api/auth';
-const ADMIN_EMAIL = 'admin@richasharma.com'; // Hardcoded admin email for demo
+// ─── Vanilla Auth Service for SQLite Backend ───
+const AUTH_API = '/api/auth';
+const ADMIN_EMAIL = 'admin@richasharma.com'; // Hardcoded admin email reference
 
 async function loginWithPassword(email, password) {
-    const res = await fetch(`${INSFORGE_API}/sessions?client_type=mobile`, {
+    const res = await fetch(`${AUTH_API}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error || 'Login failed');
-    if (data.requireEmailVerification) throw new Error('Email verification required. Please check dashboard settings.');
 
     saveSession(data);
     return data;
 }
 
 async function signupUser(email, password, name) {
-    const res = await fetch(`${INSFORGE_API}/users?client_type=mobile`, {
+    const res = await fetch(`${AUTH_API}/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error || 'Signup failed');
-    if (data.requireEmailVerification) throw new Error('Signup successful, but email verification is required by the server.');
 
     saveSession(data);
-
-    // Auto-create profile in the public schema (upsert to avoid duplicates)
-    if (data.user && data.accessToken) {
-        try {
-            await fetch('https://iznwab88.us-east.insforge.app/api/database/records/profiles', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${data.accessToken}`,
-                    'Prefer': 'return=representation,resolution=ignore-duplicates'
-                },
-                body: JSON.stringify([{ id: data.user.id, email: data.user.email, name: name }])
-            });
-        } catch (e) {
-            console.error('Could not auto-create profile:', e);
-            // Non-fatal — user can still login
-        }
-    }
-
     return data;
 }
 
@@ -75,8 +55,7 @@ function getCurrentUser() {
 
 function isAdmin() {
     const user = getCurrentUser();
-    // Assuming the first registered user or a specific email is the admin
-    return user && user.email === ADMIN_EMAIL;
+    return user && (user.role === 'admin' || user.email === ADMIN_EMAIL);
 }
 
 // Ensure the UI updates based on login state when the script loads
@@ -139,10 +118,16 @@ function openAuthModal() {
     if (modal) modal.style.display = 'flex';
 }
 
+// Make openAuthModal globally accessible if loaded as module/deferred
+window.openAuthModal = openAuthModal;
+
 function closeAuthModal() {
     const modal = document.getElementById('authModal');
     if (modal) modal.style.display = 'none';
 }
+
+// Make closeAuthModal globally accessible
+window.closeAuthModal = closeAuthModal;
 
 async function handleUserAuth(e, isLogin) {
     e.preventDefault();
@@ -162,7 +147,6 @@ async function handleUserAuth(e, isLogin) {
         } else {
             const name = form.querySelector('input[type="text"]').value;
             await signupUser(email, password, name);
-            // Auto login after signup might not work if verification is required, but SDK handles that if verified.
         }
         closeAuthModal();
         window.location.reload();
@@ -173,6 +157,9 @@ async function handleUserAuth(e, isLogin) {
         submitBtn.innerText = isLogin ? 'Login' : 'Sign Up';
     }
 }
+
+// Make handleUserAuth globally accessible
+window.handleUserAuth = handleUserAuth;
 
 function toggleAuthMode() {
     const loginForm = document.getElementById('loginFormContent');
@@ -185,3 +172,6 @@ function toggleAuthMode() {
         signupForm.style.display = 'flex';
     }
 }
+
+// Make toggleAuthMode globally accessible
+window.toggleAuthMode = toggleAuthMode;

@@ -1,104 +1,499 @@
 """
 Flask Backend Server for ऋचाएं (Richa Sharma Stories & Blogs)
-Proxies requests to Insforge Database REST API
+Uses a local SQLite database for stories, comments, and users.
 """
 
 import os
-import requests as http_requests
-from flask import Flask, request, jsonify
+import sqlite3
+from datetime import datetime
+from flask import Flask, request, jsonify, g, send_from_directory
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 app = Flask(__name__)
 CORS(app)
 
-# ─── Insforge Configuration ───
-INSFORGE_BASE = 'https://iznwab88.us-east.insforge.app/api'
-ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjkwOTJ9.jHZvO6BAfkHlewtgSj8mZ9z6a4Uk2yABAXgkhRqmWPI'
+# ─── Configuration ───
+DATABASE = os.path.join(os.path.dirname(__file__), 'database.db')
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+SECRET_KEY = os.environ.get('SECRET_KEY', 'richa_sharma_super_secret_key_98765')
+app.config['SECRET_KEY'] = SECRET_KEY
+serializer = URLSafeTimedSerializer(SECRET_KEY)
 
-def get_auth_header():
-    """Extract Bearer token from incoming request, fallback to anon key."""
-    auth = request.headers.get('Authorization', '')
-    if auth:
-        return auth
-    return f'Bearer {ANON_KEY}'
+# ─── Database Utilities ───
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.execute("PRAGMA foreign_keys = ON")
+        db.row_factory = sqlite3.Row
+    return db
 
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-def proxy_headers(content_type='application/json', prefer=None):
-    """Build headers for Insforge API calls."""
-    headers = {
-        'Authorization': get_auth_header(),
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+        
+        # Create users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                name TEXT,
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create stories table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                excerpt TEXT,
+                category TEXT NOT NULL,
+                cover_image_url TEXT,
+                cover_image_key TEXT,
+                author_id INTEGER,
+                status TEXT DEFAULT 'published',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (author_id) REFERENCES users (id)
+            )
+        ''')
+
+        # Run migration if status column does not exist
+        try:
+            cursor.execute("ALTER TABLE stories ADD COLUMN status TEXT DEFAULT 'published'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        
+        # Create comments table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                story_id INTEGER NOT NULL,
+                user_id INTEGER,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+
+        # Create bookmarks table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bookmarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                story_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE,
+                UNIQUE(user_id, story_id)
+            )
+        ''')
+        conn.commit()
+
+        # Seed default admin user if not exists
+        cursor.execute('SELECT * FROM users WHERE email = ?', ('admin@richasharma.com',))
+        if not cursor.fetchone():
+            hashed_pw = generate_password_hash('admin123')
+            cursor.execute('''
+                INSERT INTO users (email, password_hash, name, role)
+                VALUES (?, ?, ?, ?)
+            ''', ('admin@richasharma.com', hashed_pw, 'Richa Sharma', 'admin'))
+            conn.commit()
+
+# Initialize Database
+init_db()
+
+# ─── Auth Token Helpers ───
+def generate_token(user_id, email, role):
+    payload = {
+        'id': user_id,
+        'email': email,
+        'role': role
     }
-    if content_type:
-        headers['Content-Type'] = content_type
-    if prefer:
-        headers['Prefer'] = prefer
-    return headers
+    return serializer.dumps(payload, salt='auth-salt')
 
+def verify_token(token):
+    try:
+        # Max age: 1 day = 86400 seconds
+        data = serializer.loads(token, salt='auth-salt', max_age=86400)
+        return data
+    except (SignatureExpired, BadSignature):
+        return None
+
+def get_current_user_from_request():
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        return verify_token(token)
+    return None
 
 # ════════════════════════════════════════════
-#  POSTS (maps to Insforge "stories" table)
+#  POSTS (Stories)
 # ════════════════════════════════════════════
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
-    """Fetch posts, optionally filtered by category."""
+    """Fetch stories, optionally filtered by category and status."""
     category = request.args.get('category', 'story')
-    url = (
-        f'{INSFORGE_BASE}/database/records/stories'
-        f'?category=eq.{category}'
-        f'&select=*,profiles(name,avatar_url)'
-        f'&order=created_at.desc'
-    )
-    resp = http_requests.get(url, headers=proxy_headers())
-    return jsonify(resp.json()), resp.status_code
+    status = request.args.get('status', 'published')
+
+    user = get_current_user_from_request()
+    if not user or user.get('role') != 'admin':
+        status = 'published'
+
+    db = get_db()
+    cursor = db.cursor()
+
+    query = '''
+        SELECT s.*, u.name as author_name 
+        FROM stories s 
+        LEFT JOIN users u ON s.author_id = u.id 
+    '''
+    params = []
+    conditions = []
+
+    if category != 'all':
+        conditions.append("s.category = ?")
+        params.append(category)
+
+    if status != 'all':
+        conditions.append("s.status = ?")
+        params.append(status)
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    query += " ORDER BY s.created_at DESC"
+
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    
+    posts = []
+    for r in rows:
+        posts.append({
+            'id': r['id'],
+            'title': r['title'],
+            'content': r['content'],
+            'excerpt': r['excerpt'],
+            'category': r['category'],
+            'cover_image_url': r['cover_image_url'],
+            'cover_image_key': r['cover_image_key'],
+            'status': r['status'],
+            'author_id': r['author_id'],
+            'created_at': r['created_at'],
+            'profiles': {
+                'name': r['author_name'] or 'Richa Sharma',
+                'avatar_url': None
+            }
+        })
+    return jsonify(posts), 200
 
 
 @app.route('/api/posts/<post_id>', methods=['GET'])
 def get_post(post_id):
     """Fetch a single post by ID."""
-    url = (
-        f'{INSFORGE_BASE}/database/records/stories'
-        f'?id=eq.{post_id}'
-        f'&select=*,profiles(name,avatar_url)'
-    )
-    resp = http_requests.get(url, headers=proxy_headers())
-    data = resp.json()
-    if isinstance(data, list) and len(data) > 0:
-        return jsonify(data[0]), 200
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT s.*, u.name as author_name 
+        FROM stories s 
+        LEFT JOIN users u ON s.author_id = u.id 
+        WHERE s.id = ?
+    ''', (post_id,))
+    r = cursor.fetchone()
+    if r:
+        # If post is draft, check admin permissions
+        if r['status'] == 'draft':
+            user = get_current_user_from_request()
+            if not user or user.get('role') != 'admin':
+                return jsonify({'error': 'Unauthorized. This post is a draft.'}), 403
+
+        # Check bookmark state
+        is_bookmarked = False
+        current_user = get_current_user_from_request()
+        if current_user:
+            cursor.execute('SELECT 1 FROM bookmarks WHERE user_id = ? AND story_id = ?', (current_user['id'], post_id))
+            if cursor.fetchone():
+                is_bookmarked = True
+
+        post = {
+            'id': r['id'],
+            'title': r['title'],
+            'content': r['content'],
+            'excerpt': r['excerpt'],
+            'category': r['category'],
+            'cover_image_url': r['cover_image_url'],
+            'cover_image_key': r['cover_image_key'],
+            'status': r['status'],
+            'author_id': r['author_id'],
+            'created_at': r['created_at'],
+            'is_bookmarked': is_bookmarked,
+            'profiles': {
+                'name': r['author_name'] or 'Richa Sharma',
+                'avatar_url': None
+            }
+        }
+        return jsonify(post), 200
     return jsonify({'error': 'Post not found'}), 404
 
 
 @app.route('/api/posts', methods=['POST'])
 def create_post():
-    """Create a new post (story/article/series/comics/drama)."""
+    """Create a new story/post."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+        
     body = request.get_json()
     if not body:
         return jsonify({'error': 'Request body is required'}), 400
 
-    url = f'{INSFORGE_BASE}/database/records/stories'
-    headers = proxy_headers(prefer='return=representation')
-    # Insforge expects an array
-    payload = [body] if isinstance(body, dict) else body
+    if isinstance(body, list):
+        body = body[0]
 
-    resp = http_requests.post(url, json=payload, headers=headers)
+    title = body.get('title')
+    content = body.get('content')
+    excerpt = body.get('excerpt')
+    category = body.get('category', 'story')
+    cover_image_url = body.get('cover_image_url')
+    cover_image_key = body.get('cover_image_key')
+    status = body.get('status', 'published')
+    author_id = user['id']
 
-    if resp.status_code in (200, 201):
-        return jsonify(resp.json()), 201
-    return jsonify(resp.json()), resp.status_code
+    if not title or not content:
+        return jsonify({'error': 'Title and content are required'}), 400
+
+    if status not in ['published', 'draft']:
+        status = 'published'
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        INSERT INTO stories (title, content, excerpt, category, cover_image_url, cover_image_key, author_id, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (title, content, excerpt, category, cover_image_url, cover_image_key, author_id, status))
+    db.commit()
+    post_id = cursor.lastrowid
+
+    cursor.execute('''
+        SELECT s.*, u.name as author_name 
+        FROM stories s 
+        LEFT JOIN users u ON s.author_id = u.id 
+        WHERE s.id = ?
+    ''', (post_id,))
+    r = cursor.fetchone()
+    
+    post = {
+        'id': r['id'],
+        'title': r['title'],
+        'content': r['content'],
+        'excerpt': r['excerpt'],
+        'category': r['category'],
+        'cover_image_url': r['cover_image_url'],
+        'cover_image_key': r['cover_image_key'],
+        'status': r['status'],
+        'author_id': r['author_id'],
+        'created_at': r['created_at'],
+        'profiles': {
+            'name': r['author_name'] or 'Richa Sharma',
+            'avatar_url': None
+        }
+    }
+    return jsonify(post), 201
+
+
+@app.route('/api/posts/<post_id>', methods=['PUT'])
+def update_post(post_id):
+    """Update an existing story/post (Admin only)."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+        
+    body = request.get_json()
+    if not body:
+        return jsonify({'error': 'Request body is required'}), 400
+        
+    if isinstance(body, list):
+        body = body[0]
+        
+    title = body.get('title')
+    content = body.get('content')
+    excerpt = body.get('excerpt')
+    category = body.get('category')
+    cover_image_url = body.get('cover_image_url')
+    cover_image_key = body.get('cover_image_key')
+    status = body.get('status', 'published')
+    
+    if not title or not content:
+        return jsonify({'error': 'Title and content are required'}), 400
+        
+    if status not in ['published', 'draft']:
+        status = 'published'
+        
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT author_id FROM stories WHERE id = ?', (post_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({'error': 'Post not found'}), 404
+        
+    cursor.execute('''
+        UPDATE stories 
+        SET title = ?, content = ?, excerpt = ?, category = ?, cover_image_url = ?, cover_image_key = ?, status = ?
+        WHERE id = ?
+    ''', (title, content, excerpt, category, cover_image_url, cover_image_key, status, post_id))
+    db.commit()
+    
+    cursor.execute('''
+        SELECT s.*, u.name as author_name 
+        FROM stories s 
+        LEFT JOIN users u ON s.author_id = u.id 
+        WHERE s.id = ?
+    ''', (post_id,))
+    r = cursor.fetchone()
+    
+    post = {
+        'id': r['id'],
+        'title': r['title'],
+        'content': r['content'],
+        'excerpt': r['excerpt'],
+        'category': r['category'],
+        'cover_image_url': r['cover_image_url'],
+        'cover_image_key': r['cover_image_key'],
+        'status': r['status'],
+        'author_id': r['author_id'],
+        'created_at': r['created_at'],
+        'profiles': {
+            'name': r['author_name'] or 'Richa Sharma',
+            'avatar_url': None
+        }
+    }
+    return jsonify(post), 200
+
+
+# ════════════════════════════════════════════
+#  BOOKMARKS
+# ════════════════════════════════════════════
+
+@app.route('/api/bookmarks', methods=['POST'])
+def toggle_bookmark():
+    """Bookmark or unbookmark a story (Registered users)."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Please login to bookmark.'}), 401
+        
+    body = request.get_json()
+    if not body or 'story_id' not in body:
+        return jsonify({'error': 'story_id is required'}), 400
+        
+    story_id = body.get('story_id')
+    user_id = user['id']
+    
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT id FROM stories WHERE id = ?', (story_id,))
+    if not cursor.fetchone():
+        return jsonify({'error': 'Story not found'}), 404
+        
+    cursor.execute('SELECT id FROM bookmarks WHERE user_id = ? AND story_id = ?', (user_id, story_id))
+    existing = cursor.fetchone()
+    
+    if existing:
+        cursor.execute('DELETE FROM bookmarks WHERE user_id = ? AND story_id = ?', (user_id, story_id))
+        db.commit()
+        return jsonify({'bookmarked': False}), 200
+    else:
+        cursor.execute('INSERT INTO bookmarks (user_id, story_id) VALUES (?, ?)', (user_id, story_id))
+        db.commit()
+        return jsonify({'bookmarked': True}), 200
+
+
+@app.route('/api/bookmarks', methods=['GET'])
+def get_bookmarks():
+    """Get all bookmarked stories for current user."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Please login to view bookmarks.'}), 401
+        
+    user_id = user['id']
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('''
+        SELECT s.*, u.name as author_name 
+        FROM bookmarks b
+        JOIN stories s ON b.story_id = s.id
+        LEFT JOIN users u ON s.author_id = u.id
+        WHERE b.user_id = ?
+        ORDER BY b.created_at DESC
+    ''', (user_id,))
+    rows = cursor.fetchall()
+    
+    posts = []
+    for r in rows:
+        posts.append({
+            'id': r['id'],
+            'title': r['title'],
+            'content': r['content'],
+            'excerpt': r['excerpt'],
+            'category': r['category'],
+            'cover_image_url': r['cover_image_url'],
+            'cover_image_key': r['cover_image_key'],
+            'status': r['status'],
+            'author_id': r['author_id'],
+            'created_at': r['created_at'],
+            'profiles': {
+                'name': r['author_name'] or 'Richa Sharma',
+                'avatar_url': None
+            }
+        })
+    return jsonify(posts), 200
 
 
 @app.route('/api/posts/<post_id>', methods=['DELETE'])
 def delete_post(post_id):
     """Delete a post by ID."""
-    url = f'{INSFORGE_BASE}/database/records/stories?id=eq.{post_id}'
-    resp = http_requests.delete(url, headers=proxy_headers())
-    if resp.status_code == 204:
-        return '', 204
-    try:
-        return jsonify(resp.json()), resp.status_code
-    except Exception:
-        return '', resp.status_code
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT author_id FROM stories WHERE id = ?', (post_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({'error': 'Post not found'}), 404
+
+    # Allow if user is admin OR the author of the story
+    if user['role'] != 'admin' and row['author_id'] != user['id']:
+        return jsonify({'error': 'You do not have permission to delete this post.'}), 403
+
+    cursor.execute('DELETE FROM stories WHERE id = ?', (post_id,))
+    db.commit()
+    return '', 204
 
 
 # ════════════════════════════════════════════
@@ -108,114 +503,217 @@ def delete_post(post_id):
 @app.route('/api/comments/<story_id>', methods=['GET'])
 def get_comments(story_id):
     """Fetch comments for a specific story."""
-    url = (
-        f'{INSFORGE_BASE}/database/records/comments'
-        f'?story_id=eq.{story_id}'
-        f'&select=*,profiles(name,avatar_url)'
-        f'&order=created_at.desc'
-    )
-    resp = http_requests.get(url, headers=proxy_headers())
-    return jsonify(resp.json()), resp.status_code
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT c.*, u.name as user_name 
+        FROM comments c 
+        LEFT JOIN users u ON c.user_id = u.id 
+        WHERE c.story_id = ? 
+        ORDER BY c.created_at DESC
+    ''', (story_id,))
+    rows = cursor.fetchall()
+    
+    comments_list = []
+    for r in rows:
+        comments_list.append({
+            'id': r['id'],
+            'story_id': r['story_id'],
+            'user_id': r['user_id'],
+            'content': r['content'],
+            'created_at': r['created_at'],
+            'profiles': {
+                'name': r['user_name'] or 'Anonymous User',
+                'avatar_url': None
+            }
+        })
+    return jsonify(comments_list), 200
 
 
 @app.route('/api/comments', methods=['POST'])
 def add_comment():
     """Add a comment to a story."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Please login to comment.'}), 401
+
     body = request.get_json()
     if not body:
         return jsonify({'error': 'Request body is required'}), 400
 
-    url = f'{INSFORGE_BASE}/database/records/comments'
-    headers = proxy_headers(prefer='return=representation')
-    payload = [body] if isinstance(body, dict) else body
+    if isinstance(body, list):
+        body = body[0]
 
-    resp = http_requests.post(url, json=payload, headers=headers)
+    story_id = body.get('story_id')
+    content = body.get('content')
+    user_id = user['id']
 
-    if resp.status_code in (200, 201):
-        return jsonify(resp.json()), 201
-    return jsonify(resp.json()), resp.status_code
+    if not story_id or not content:
+        return jsonify({'error': 'story_id and content are required'}), 400
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        INSERT INTO comments (story_id, user_id, content)
+        VALUES (?, ?, ?)
+    ''', (story_id, user_id, content))
+    db.commit()
+    comment_id = cursor.lastrowid
+
+    cursor.execute('''
+        SELECT c.*, u.name as user_name 
+        FROM comments c 
+        LEFT JOIN users u ON c.user_id = u.id 
+        WHERE c.id = ?
+    ''', (comment_id,))
+    r = cursor.fetchone()
+
+    comment = {
+        'id': r['id'],
+        'story_id': r['story_id'],
+        'user_id': r['user_id'],
+        'content': r['content'],
+        'created_at': r['created_at'],
+        'profiles': {
+            'name': r['user_name'] or 'Anonymous User',
+            'avatar_url': None
+        }
+    }
+    return jsonify(comment), 201
 
 
 # ════════════════════════════════════════════
-#  AUTHENTICATION (proxy to Insforge Auth)
+#  AUTHENTICATION
 # ════════════════════════════════════════════
 
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
     """Login with email and password."""
     body = request.get_json()
-    url = f'{INSFORGE_BASE}/auth/sessions?client_type=mobile'
-    resp = http_requests.post(
-        url,
-        json=body,
-        headers={'Content-Type': 'application/json'}
-    )
-    return jsonify(resp.json()), resp.status_code
+    if not body:
+        return jsonify({'error': 'Credentials are required'}), 400
+    email = body.get('email')
+    password = body.get('password')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Invalid email or password'}), 400
+
+    token = generate_token(user['id'], user['email'], user['role'])
+
+    return jsonify({
+        'accessToken': token,
+        'refreshToken': token,
+        'user': {
+            'id': user['id'],
+            'email': user['email'],
+            'name': user['name'],
+            'role': user['role']
+        }
+    }), 200
 
 
 @app.route('/api/auth/signup', methods=['POST'])
 def auth_signup():
-    """Sign up a new user and auto-create profile."""
+    """Sign up a new user."""
     body = request.get_json()
-    url = f'{INSFORGE_BASE}/auth/users?client_type=mobile'
-    resp = http_requests.post(
-        url,
-        json=body,
-        headers={'Content-Type': 'application/json'}
-    )
-    data = resp.json()
+    if not body:
+        return jsonify({'error': 'Data is required'}), 400
+    email = body.get('email')
+    password = body.get('password')
+    name = body.get('name', '')
 
-    # Auto-create profile after successful signup
-    if resp.status_code in (200, 201) and data.get('user') and data.get('accessToken'):
-        try:
-            profile_url = f'{INSFORGE_BASE}/database/records/profiles'
-            profile_headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {data["accessToken"]}',
-                'Prefer': 'return=representation,resolution=ignore-duplicates'
-            }
-            profile_data = [{
-                'id': data['user']['id'],
-                'email': data['user']['email'],
-                'name': body.get('name', '')
-            }]
-            http_requests.post(profile_url, json=profile_data, headers=profile_headers)
-        except Exception:
-            pass  # Non-fatal — user can still login
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
 
-    return jsonify(data), resp.status_code
+    db = get_db()
+    cursor = db.cursor()
+
+    # Check if user already exists
+    cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+    if cursor.fetchone():
+        return jsonify({'error': 'Email already registered'}), 400
+
+    hashed_pw = generate_password_hash(password)
+    
+    # Auto-assign 'admin' role if this is the first registered user
+    cursor.execute('SELECT COUNT(*) as count FROM users')
+    count = cursor.fetchone()['count']
+    role = 'admin' if count == 0 else 'user'
+
+    try:
+        cursor.execute('''
+            INSERT INTO users (email, password_hash, name, role)
+            VALUES (?, ?, ?, ?)
+        ''', (email, hashed_pw, name, role))
+        db.commit()
+        user_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Signup failed due to database conflict'}), 400
+
+    token = generate_token(user_id, email, role)
+
+    return jsonify({
+        'accessToken': token,
+        'refreshToken': token,
+        'user': {
+            'id': user_id,
+            'email': email,
+            'name': name,
+            'role': role
+        }
+    }), 201
 
 
 # ════════════════════════════════════════════
-#  IMAGE UPLOAD (proxy to Insforge Storage)
+#  IMAGE UPLOAD
 # ════════════════════════════════════════════
+
+@app.route('/uploads/<filename>')
+def serve_upload(filename):
+    """Serve uploaded images."""
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 @app.route('/api/upload', methods=['POST'])
 def upload_image():
-    """Upload an image to Insforge storage bucket."""
+    """Upload an image to local directory."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Unauthorized. Please login to upload images.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
-    url = f'{INSFORGE_BASE}/storage/buckets/images/objects/auto'
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
 
-    files = {'file': (file.filename, file.stream, file.content_type)}
-    headers = {'Authorization': get_auth_header()}
+    if file:
+        filename = secure_filename(file.filename)
+        # Append unique timestamp to prevent name collisions
+        name_part, ext_part = os.path.splitext(filename)
+        unique_filename = f"{name_part}_{int(datetime.now().timestamp())}{ext_part}"
+        
+        file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+        file.save(file_path)
 
-    resp = http_requests.post(url, files=files, headers=headers)
+        # Generate absolute URL based on incoming request host
+        file_url = f"{request.host_url}uploads/{unique_filename}"
 
-    if resp.status_code in (200, 201):
-        data = resp.json()
-        # Handle different response shapes
-        if isinstance(data, dict) and data.get('url'):
-            return jsonify({'url': data['url'], 'key': data.get('key')}), 200
-        if isinstance(data, dict) and data.get('data', {}).get('url'):
-            return jsonify({'url': data['data']['url'], 'key': data['data'].get('key')}), 200
-        if isinstance(data, list) and len(data) > 0 and data[0].get('url'):
-            return jsonify({'url': data[0]['url'], 'key': data[0].get('key')}), 200
-        return jsonify(data), 200
-
-    return jsonify(resp.json()), resp.status_code
+        return jsonify({
+            'url': file_url,
+            'key': unique_filename
+        }), 200
 
 
 # ════════════════════════════════════════════
@@ -226,15 +724,20 @@ def upload_image():
 @app.route('/<path:path>')
 def serve_react(path):
     """Serve React build files in production."""
+    # Prevent falling back to index.html for non-existent API or upload routes
+    if path.startswith('api/') or path.startswith('uploads/'):
+        return jsonify({'error': 'Not found'}), 404
+
     static_folder = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
     if path and os.path.exists(os.path.join(static_folder, path)):
-        from flask import send_from_directory
         return send_from_directory(static_folder, path)
     index_path = os.path.join(static_folder, 'index.html')
     if os.path.exists(index_path):
-        from flask import send_from_directory
         return send_from_directory(static_folder, 'index.html')
-    return jsonify({'message': 'Richa Sharma Stories API is running. Build the React frontend for the UI.'}), 200
+    return jsonify({
+        'message': 'Richa Sharma Stories SQLite API is running. Build the React frontend for the UI.',
+        'database_file': DATABASE
+    }), 200
 
 
 if __name__ == '__main__':

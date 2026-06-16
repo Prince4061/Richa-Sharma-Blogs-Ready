@@ -38,6 +38,7 @@ export default function Header() {
             <li><a href="/#series">Series</a></li>
             <li><a href="/#comics">Comics</a></li>
             <li><a href="/#drama">Drama</a></li>
+            <li><a href="/#wgws">WGWS</a></li>
             {admin && (
               <li>
                 <Link to="/editor" className="neon-text-accent">
