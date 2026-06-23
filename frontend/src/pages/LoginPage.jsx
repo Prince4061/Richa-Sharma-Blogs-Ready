@@ -41,12 +41,12 @@ export default function LoginPage() {
 
         <form className="login-form" onSubmit={handleLogin}>
           <div className="input-group">
-            <label htmlFor="email">Email Address</label>
+            <label htmlFor="email">Mobile Number / Email</label>
             <input
-              type="email"
+              type="text"
               id="email"
               required
-              placeholder="admin@domain.com"
+              placeholder="Mobile Number or Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />

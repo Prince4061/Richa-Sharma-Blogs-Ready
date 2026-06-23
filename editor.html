@@ -186,7 +186,20 @@
     </header>
 
     <main class="animate-fade-in">
-        <div class="editor-container">
+        <!-- Tab Navigation -->
+        <div style="display: flex; gap: 15px; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.2rem; flex-wrap: wrap; max-width: 1200px; margin: 0 auto 2rem auto; padding-left: 1rem; padding-right: 1rem;">
+            <button onclick="switchTab('write')" id="tabBtn-write" class="neon-btn" style="background: var(--accent-neon); color: var(--bg-primary); border-color: var(--accent-neon); font-weight: bold; padding: 10px 22px; font-size: 0.95rem;">
+                📝 Write Story
+            </button>
+            <button onclick="switchTab('socials')" id="tabBtn-socials" class="neon-btn" style="background: transparent; color: inherit; border-color: var(--border-color); font-weight: bold; padding: 10px 22px; font-size: 0.95rem;">
+                🔗 Social Settings
+            </button>
+            <button onclick="switchTab('users')" id="tabBtn-users" class="neon-btn" style="background: transparent; color: inherit; border-color: var(--border-color); font-weight: bold; padding: 10px 22px; font-size: 0.95rem;">
+                👥 User Management
+            </button>
+        </div>
+
+        <div class="editor-container" id="writeSection">
             <div class="editor-header">
                 <h2 style="margin: 0; font-size: 1.5rem;">Draft New Story</h2>
                 <div style="display: flex; gap: 15px;">
@@ -266,6 +279,55 @@
             <div class="content-editor" id="editor" contenteditable="true"
                 placeholder="Type your story here... (Hindi keyboard supported natively)"></div>
 
+        </div>
+
+        <!-- Admin Socials Settings Section -->
+        <div class="editor-container" id="socialsSection" style="margin-top: 0rem; display: none;">
+            <h3 class="neon-text" style="font-size: 1.4rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
+                <span>🔗 Admin Social Links Settings</span>
+            </h3>
+            <div class="glass-panel" style="padding: 25px; border-radius: 8px; border: 1px solid rgba(234, 255, 0, 0.15); background: rgba(18, 18, 18, 0.6); backdrop-filter: blur(10px);">
+                <form id="socialsForm" style="display: flex; flex-direction: column; gap: 15px;">
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="color: var(--text-secondary); font-size: 0.9rem;">Instagram Profile Link</label>
+                        <input type="url" id="instagramUrl" placeholder="https://instagram.com/username"
+                            style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-primary); font-family: var(--font-main); outline: none;">
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="color: var(--text-secondary); font-size: 0.9rem;">Facebook Profile Link</label>
+                        <input type="url" id="facebookUrl" placeholder="https://facebook.com/username"
+                            style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-primary); font-family: var(--font-main); outline: none;">
+                    </div>
+
+                    <button type="submit" class="neon-btn" style="align-self: flex-start; padding: 10px 20px; margin-top: 10px;">Save Social Links</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Registered Users Management Section -->
+        <div class="editor-container" id="usersSection" style="margin-top: 0rem; display: none;">
+            <h3 class="neon-text" style="font-size: 1.4rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
+                <span>👥 Registered Users Management</span>
+            </h3>
+            <div class="glass-panel" style="padding: 25px; border-radius: 8px; border: 1px solid rgba(234, 255, 0, 0.15); background: rgba(18, 18, 18, 0.6); backdrop-filter: blur(10px); overflow-x: auto;">
+                <div id="usersLoading" style="color: var(--text-secondary);">Loading users...</div>
+                <table id="usersTable" style="display: none; width: 100%; border-collapse: collapse; text-align: left; min-width: 600px;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 10px;">
+                            <th style="padding: 10px; color: var(--text-secondary);">ID</th>
+                            <th style="padding: 10px; color: var(--text-secondary);">Name</th>
+                            <th style="padding: 10px; color: var(--text-secondary);">Email</th>
+                            <th style="padding: 10px; color: var(--text-secondary);">Role</th>
+                            <th style="padding: 10px; color: var(--text-secondary);">Status</th>
+                            <th style="padding: 10px; color: var(--text-secondary);">Joined Date</th>
+                            <th style="padding: 10px; color: var(--text-secondary); text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                    </tbody>
+                </table>
+            </div>
         </div>
     </main>
 
@@ -448,6 +510,179 @@
                 publishBtn.innerText = 'Publish';
                 publishBtn.disabled = false;
             }
+        });
+
+        // ===== Load & Save Admin Social Links =====
+        async function loadAdminSocials() {
+            try {
+                const profile = await getAdminProfile();
+                if (profile) {
+                    document.getElementById('instagramUrl').value = profile.instagram_url || '';
+                    document.getElementById('facebookUrl').value = profile.facebook_url || '';
+                }
+            } catch (err) {
+                console.error('Failed to load socials:', err);
+            }
+        }
+
+        document.getElementById('socialsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerText;
+            submitBtn.innerText = 'Saving...';
+            submitBtn.disabled = true;
+
+            const instagramUrl = document.getElementById('instagramUrl').value.trim();
+            const facebookUrl = document.getElementById('facebookUrl').value.trim();
+
+            try {
+                await updateAdminProfile({ instagram_url: instagramUrl, facebook_url: facebookUrl });
+                showDraftToast('Social links updated! ✓', 'var(--accent-neon)');
+            } catch (err) {
+                showDraftToast('Failed to save socials: ' + err.message, '#ff4a4a');
+            } finally {
+                submitBtn.innerText = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        // ===== Load & Save Registered Users =====
+        let globalUsersList = [];
+
+        async function fetchRegisteredUsers() {
+            const loadingDiv = document.getElementById('usersLoading');
+            const table = document.getElementById('usersTable');
+            const tbody = document.getElementById('usersTableBody');
+
+            try {
+                const data = await getUsers();
+                globalUsersList = data || [];
+                tbody.innerHTML = '';
+
+                if (globalUsersList.length === 0) {
+                    loadingDiv.innerText = 'No registered users found.';
+                    return;
+                }
+
+                const currentUser = getCurrentUser();
+
+                globalUsersList.forEach(usr => {
+                    const row = document.createElement('tr');
+                    row.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
+
+                    const isSelf = currentUser && usr.id === currentUser.id;
+                    const actionButton = isSelf 
+                        ? `<span style="font-size: 0.8rem; color: var(--text-secondary); font-style: italic;">Logged In</span>`
+                        : `<button class="neon-btn" onclick="handleToggleBlockVanilla(${usr.id}, '${usr.email}')" 
+                              style="border-color: ${usr.status === 'blocked' ? '#2ecc71' : '#ff4a4a'}; 
+                                     color: ${usr.status === 'blocked' ? '#2ecc71' : '#ff4a4a'}; 
+                                     padding: 5px 12px; font-size: 0.8rem; background: transparent;">
+                              ${usr.status === 'blocked' ? 'Unblock' : 'Block User'}
+                           </button>`;
+
+                    const roleTagStyle = usr.role === 'admin' 
+                        ? `background: var(--accent-neon); color: var(--bg-primary);` 
+                        : `background: #555; color: inherit;`;
+
+                    const statusStyle = usr.status === 'blocked'
+                        ? `color: #ff4a4a; text-shadow: 0 0 10px rgba(255,74,74,0.4); font-weight: bold;`
+                        : `color: #2ecc71; font-weight: bold;`;
+
+                    row.innerHTML = `
+                        <td style="padding: 10px; color: var(--text-secondary);">${usr.id}</td>
+                        <td style="padding: 10px; font-weight: bold;">${usr.name || 'N/A'}</td>
+                        <td style="padding: 10px;">${usr.email}</td>
+                        <td style="padding: 10px;">
+                            <span class="story-tag" style="font-size: 0.75rem; padding: 3px 8px; ${roleTagStyle}">
+                                ${usr.role}
+                            </span>
+                        </td>
+                        <td style="padding: 10px;">
+                            <span style="${statusStyle}">
+                                ${(usr.status || 'active').toUpperCase()}
+                            </span>
+                        </td>
+                        <td style="padding: 10px; color: var(--text-secondary); font-size: 0.85rem;">
+                            ${new Date(usr.created_at).toLocaleDateString()}
+                        </td>
+                        <td style="padding: 10px; text-align: right;">
+                            ${actionButton}
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                loadingDiv.style.display = 'none';
+                table.style.display = 'table';
+            } catch (err) {
+                loadingDiv.innerText = 'Failed to load users: ' + err.message;
+            }
+        }
+
+        async function handleToggleBlockVanilla(userId, userEmail) {
+            const targetUser = globalUsersList.find(u => u.id === userId);
+            const actionText = targetUser && targetUser.status === 'blocked' ? 'unblock' : 'block';
+            if (!confirm(`Are you sure you want to ${actionText} ${userEmail}?`)) {
+                return;
+            }
+
+            try {
+                await toggleBlockUser(userId);
+                showDraftToast(`User status updated to ${actionText}ed`, 'var(--accent-neon)');
+                fetchRegisteredUsers();
+            } catch (err) {
+                alert('Failed to update status: ' + err.message);
+            }
+        }
+
+        window.handleToggleBlockVanilla = handleToggleBlockVanilla;
+
+        function switchTab(tabName) {
+            const sections = {
+                write: document.getElementById('writeSection'),
+                socials: document.getElementById('socialsSection'),
+                users: document.getElementById('usersSection')
+            };
+
+            const buttons = {
+                write: document.getElementById('tabBtn-write'),
+                socials: document.getElementById('tabBtn-socials'),
+                users: document.getElementById('tabBtn-users')
+            };
+
+            // Toggle sections
+            Object.keys(sections).forEach(key => {
+                if (sections[key]) {
+                    if (key === tabName) {
+                        sections[key].style.display = 'block';
+                    } else {
+                        sections[key].style.display = 'none';
+                    }
+                }
+            });
+
+            // Toggle buttons background/color
+            Object.keys(buttons).forEach(key => {
+                if (buttons[key]) {
+                    if (key === tabName) {
+                        buttons[key].style.background = 'var(--accent-neon)';
+                        buttons[key].style.color = 'var(--bg-primary)';
+                        buttons[key].style.borderColor = 'var(--accent-neon)';
+                    } else {
+                        buttons[key].style.background = 'transparent';
+                        buttons[key].style.color = 'inherit';
+                        buttons[key].style.borderColor = 'var(--border-color)';
+                    }
+                }
+            });
+        }
+        window.switchTab = switchTab;
+
+        // Trigger on load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadAdminSocials();
+            fetchRegisteredUsers();
+            switchTab('write');
         });
     </script>
 </body>

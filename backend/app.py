@@ -16,9 +16,12 @@ app = Flask(__name__)
 CORS(app)
 
 # ─── Configuration ───
-DATABASE = os.path.join(os.path.dirname(__file__), 'database.db')
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+DATABASE = os.environ.get('DATABASE_PATH', os.path.join(os.path.dirname(__file__), 'database.db'))
+os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
+
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(os.path.dirname(__file__), 'uploads'))
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'richa_sharma_super_secret_key_98765')
 app.config['SECRET_KEY'] = SECRET_KEY
@@ -76,6 +79,25 @@ def init_db():
         # Run migration if status column does not exist
         try:
             cursor.execute("ALTER TABLE stories ADD COLUMN status TEXT DEFAULT 'published'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        
+        # Run migration if facebook_url or instagram_url columns do not exist in users
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN facebook_url TEXT DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN instagram_url TEXT DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'")
             conn.commit()
         except sqlite3.OperationalError:
             pass
@@ -583,20 +605,155 @@ def add_comment():
 
 
 # ════════════════════════════════════════════
+#  ADMIN SETTINGS (Facebook / Instagram URLs)
+# ════════════════════════════════════════════
+
+@app.route('/api/admin/profile', methods=['GET'])
+def get_admin_profile():
+    """Fetch admin's profile info (public endpoint)."""
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT id, email, name, role, facebook_url, instagram_url 
+        FROM users 
+        WHERE role = 'admin' 
+        ORDER BY id ASC 
+        LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    if row:
+        return jsonify({
+            'id': row['id'],
+            'email': row['email'],
+            'name': row['name'],
+            'role': row['role'],
+            'facebook_url': row['facebook_url'] or '',
+            'instagram_url': row['instagram_url'] or ''
+        }), 200
+    return jsonify({'error': 'Admin not found'}), 404
+
+
+@app.route('/api/admin/profile', methods=['PUT'])
+def update_admin_profile():
+    """Update admin's profile info (Admin only)."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+
+    body = request.get_json()
+    if not body:
+        return jsonify({'error': 'Request body is required'}), 400
+
+    facebook_url = body.get('facebook_url', '')
+    instagram_url = body.get('instagram_url', '')
+    name = body.get('name')
+    
+    db = get_db()
+    cursor = db.cursor()
+    
+    if name:
+        cursor.execute('''
+            UPDATE users 
+            SET facebook_url = ?, instagram_url = ?, name = ?
+            WHERE role = 'admin' AND id = ?
+        ''', (facebook_url, instagram_url, name, user['id']))
+    else:
+        cursor.execute('''
+            UPDATE users 
+            SET facebook_url = ?, instagram_url = ?
+            WHERE role = 'admin' AND id = ?
+        ''', (facebook_url, instagram_url, user['id']))
+    db.commit()
+    
+    return jsonify({
+        'facebook_url': facebook_url,
+        'instagram_url': instagram_url,
+        'name': name or user.get('name'),
+        'message': 'Admin profile updated successfully.'
+    }), 200
+
+
+# ════════════════════════════════════════════
+#  ADMIN USER MANAGEMENT
+# ════════════════════════════════════════════
+
+@app.route('/api/admin/users', methods=['GET'])
+def get_users():
+    """Fetch all registered users (Admin only)."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT id, email, name, role, status, created_at FROM users ORDER BY created_at DESC')
+    rows = cursor.fetchall()
+    
+    users_list = []
+    for r in rows:
+        users_list.append({
+            'id': r['id'],
+            'email': r['email'],
+            'name': r['name'],
+            'role': r['role'],
+            'status': r['status'] or 'active',
+            'created_at': r['created_at']
+        })
+    return jsonify(users_list), 200
+
+
+@app.route('/api/admin/users/<int:target_user_id>/toggle-block', methods=['POST'])
+def toggle_block_user(target_user_id):
+    """Block or unblock a user by ID (Admin only)."""
+    user = get_current_user_from_request()
+    if not user:
+        return jsonify({'error': 'Not logged in or session expired.'}), 401
+    if user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized. Admin privileges required.'}), 403
+
+    if user['id'] == target_user_id:
+        return jsonify({'error': 'You cannot block yourself!'}), 400
+
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT status FROM users WHERE id = ?', (target_user_id,))
+    target = cursor.fetchone()
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+
+    current_status = target['status'] or 'active'
+    new_status = 'blocked' if current_status == 'active' else 'active'
+
+    cursor.execute('UPDATE users SET status = ? WHERE id = ?', (new_status, target_user_id))
+    db.commit()
+
+    return jsonify({
+        'id': target_user_id,
+        'status': new_status,
+        'message': f'User status updated to {new_status}.'
+    }), 200
+
+
+# ════════════════════════════════════════════
 #  AUTHENTICATION
 # ════════════════════════════════════════════
 
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
-    """Login with email and password."""
+    """Login with mobile number/email and password."""
     body = request.get_json()
     if not body:
         return jsonify({'error': 'Credentials are required'}), 400
-    email = body.get('email')
+    email = body.get('phone') or body.get('email')
     password = body.get('password')
 
     if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
+        return jsonify({'error': 'Mobile number and password are required'}), 400
 
     db = get_db()
     cursor = db.cursor()
@@ -604,7 +761,10 @@ def auth_login():
     user = cursor.fetchone()
 
     if not user or not check_password_hash(user['password_hash'], password):
-        return jsonify({'error': 'Invalid email or password'}), 400
+        return jsonify({'error': 'Invalid mobile number or password'}), 400
+
+    if user['status'] == 'blocked':
+        return jsonify({'error': 'Your account has been blocked by the administrator.'}), 403
 
     token = generate_token(user['id'], user['email'], user['role'])
 
@@ -615,23 +775,25 @@ def auth_login():
             'id': user['id'],
             'email': user['email'],
             'name': user['name'],
-            'role': user['role']
+            'role': user['role'],
+            'facebook_url': user['facebook_url'] or '',
+            'instagram_url': user['instagram_url'] or ''
         }
     }), 200
 
 
 @app.route('/api/auth/signup', methods=['POST'])
 def auth_signup():
-    """Sign up a new user."""
+    """Sign up a new user with mobile number/email."""
     body = request.get_json()
     if not body:
         return jsonify({'error': 'Data is required'}), 400
-    email = body.get('email')
+    email = body.get('phone') or body.get('email')
     password = body.get('password')
     name = body.get('name', '')
 
     if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
+        return jsonify({'error': 'Mobile number and password are required'}), 400
 
     db = get_db()
     cursor = db.cursor()
@@ -639,7 +801,7 @@ def auth_signup():
     # Check if user already exists
     cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
     if cursor.fetchone():
-        return jsonify({'error': 'Email already registered'}), 400
+        return jsonify({'error': 'Mobile number already registered'}), 400
 
     hashed_pw = generate_password_hash(password)
     
@@ -667,7 +829,9 @@ def auth_signup():
             'id': user_id,
             'email': email,
             'name': name,
-            'role': role
+            'role': role,
+            'facebook_url': '',
+            'instagram_url': ''
         }
     }), 201
 

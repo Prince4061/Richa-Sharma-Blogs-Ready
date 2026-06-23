@@ -78,7 +78,7 @@ function updateUIForAuth() {
         if (user) {
             authButtonsContainer.innerHTML = `
                 <span style="color: var(--text-secondary); margin-right: 15px; font-size: 0.9rem;">
-                    Hi, ${user.email.split('@')[0]}
+                    Hi, ${user.name || user.email.split('@')[0]}
                 </span>
                 <button class="neon-btn" onclick="logoutUser()" style="padding: 8px 15px; font-size: 0.9rem;">Logout</button>
             `;

@@ -102,22 +102,16 @@ export async function addComment(storyId, content) {
 
 // ═══════ AUTH ═══════
 
-export async function login(email, password) {
-  const res = await api.post('/auth/login', { email, password });
+export async function login(phoneOrEmail, password) {
+  const res = await api.post('/auth/login', { phone: phoneOrEmail, password });
   const data = res.data;
-  if (data.requireEmailVerification) {
-    throw new Error('Email verification required.');
-  }
   saveSession(data);
   return data;
 }
 
-export async function signup(email, password, name) {
-  const res = await api.post('/auth/signup', { email, password, name });
+export async function signup(phoneOrEmail, password, name) {
+  const res = await api.post('/auth/signup', { phone: phoneOrEmail, password, name });
   const data = res.data;
-  if (data.requireEmailVerification) {
-    throw new Error('Signup successful, but email verification is required.');
-  }
   saveSession(data);
   return data;
 }
@@ -134,6 +128,30 @@ export async function uploadImage(file) {
     },
   });
   return res.data; // returns { url, key }
+}
+
+// ═══════ ADMIN PROFILE ═══════
+
+export async function getAdminProfile() {
+  const res = await api.get('/admin/profile');
+  return res.data;
+}
+
+export async function updateAdminProfile(profileData) {
+  const res = await api.put('/admin/profile', profileData);
+  return res.data;
+}
+
+// ═══════ USER MANAGEMENT ═══════
+
+export async function getUsers() {
+  const res = await api.get('/admin/users');
+  return res.data;
+}
+
+export async function toggleBlockUser(userId) {
+  const res = await api.post(`/admin/users/${userId}/toggle-block`);
+  return res.data;
 }
 
 export default api;

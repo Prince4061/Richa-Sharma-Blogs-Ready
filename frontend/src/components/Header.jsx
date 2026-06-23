@@ -53,7 +53,7 @@ export default function Header() {
           {user ? (
             <>
               <span style={{ color: 'var(--text-secondary)', marginRight: 15, fontSize: '0.9rem' }}>
-                Hi, {user.email?.split('@')[0]}
+                Hi, {user.name || user.email?.split('@')[0]}
               </span>
               <button
                 className="neon-btn"

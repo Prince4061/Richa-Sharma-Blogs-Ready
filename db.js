@@ -104,6 +104,26 @@ async function uploadImage(file) {
     throw new Error('Image upload failed.');
 }
 
+// Get admin profile details
+async function getAdminProfile() {
+    return await apiFetch('/admin/profile');
+}
+
+// Update admin profile details
+async function updateAdminProfile(profileData) {
+    return await apiFetch('/admin/profile', 'PUT', profileData);
+}
+
+// Fetch all registered users (admin only)
+async function getUsers() {
+    return await apiFetch('/admin/users');
+}
+
+// Block/unblock a user (admin only)
+async function toggleBlockUser(userId) {
+    return await apiFetch(`/admin/users/${userId}/toggle-block`, 'POST');
+}
+
 // Session Helpers
 function getCurrentUser() {
     const userStr = localStorage.getItem('auth_user');

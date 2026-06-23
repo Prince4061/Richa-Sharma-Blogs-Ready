@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { isAdmin } from '../services/auth';
-import { createPost, updatePost, getPost, getPosts, deletePost, uploadImage } from '../services/api';
+import { isAdmin, getCurrentUser } from '../services/auth';
+import { createPost, updatePost, getPost, getPosts, deletePost, uploadImage, getAdminProfile, updateAdminProfile, getUsers, toggleBlockUser } from '../services/api';
 
 const DRAFT_KEY = 'richa_story_draft';
 
@@ -27,6 +27,22 @@ export default function EditorPage() {
   const [initialContent, setInitialContent] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [resizerRect, setResizerRect] = useState(null);
+  const savedRangeRef = useRef(null);
+
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [facebookUrl, setFacebookUrl] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const [activeTab, setActiveTab] = useState('write');
+
+  useEffect(() => {
+    if (editId) {
+      setActiveTab('write');
+    }
+  }, [editId]);
 
   // Protect route
   useEffect(() => {
@@ -34,6 +50,40 @@ export default function EditorPage() {
       navigate('/login');
     }
   }, [admin, navigate]);
+
+  // Track selection changes to remember cursor position
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (editorRef.current) {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          if (editorRef.current.contains(range.commonAncestorContainer)) {
+            savedRangeRef.current = range.cloneRange();
+          }
+        }
+      }
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, []);
+
+  const restoreSelection = () => {
+    const sel = window.getSelection();
+    if (savedRangeRef.current) {
+      sel.removeAllRanges();
+      sel.addRange(savedRangeRef.current);
+    } else {
+      editorRef.current?.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  };
 
   // Load server-side drafts
   const fetchServerDrafts = async () => {
@@ -112,6 +162,70 @@ export default function EditorPage() {
     setToast({ show: true, message, color });
     setTimeout(() => setToast({ show: false, message: '', color: 'var(--accent-neon)' }), 2500);
   }
+
+  // Load admin profile settings on mount
+  useEffect(() => {
+    async function loadAdminProfile() {
+      if (!admin) return;
+      try {
+        const profile = await getAdminProfile();
+        if (profile) {
+          setInstagramUrl(profile.instagram_url || '');
+          setFacebookUrl(profile.facebook_url || '');
+        }
+      } catch (err) {
+        console.error('Failed to load admin profile:', err);
+      }
+    }
+    loadAdminProfile();
+  }, [admin]);
+
+  const fetchUsers = async () => {
+    if (!admin) return;
+    setLoadingUsers(true);
+    try {
+      const data = await getUsers();
+      setUsersList(data || []);
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, [admin]);
+
+  const handleSaveSocials = async (e) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    try {
+      await updateAdminProfile({
+        instagram_url: instagramUrl,
+        facebook_url: facebookUrl
+      });
+      showToast('✅ Social links updated successfully', 'var(--accent-neon)');
+    } catch (err) {
+      showToast('❌ Failed to update links: ' + (err.response?.data?.error || err.message), '#ff4a4a');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleToggleBlock = async (userId, userEmail) => {
+    const actionText = usersList.find(u => u.id === userId)?.status === 'blocked' ? 'unblock' : 'block';
+    if (!window.confirm(`Are you sure you want to ${actionText} ${userEmail}?`)) {
+      return;
+    }
+    try {
+      await toggleBlockUser(userId);
+      showToast(`User status updated to ${actionText}ed`, 'var(--accent-neon)');
+      fetchUsers();
+    } catch (err) {
+      showToast('Error updating block state: ' + (err.response?.data?.error || err.message), '#ff4a4a');
+    }
+  };
 
   function format(command, value) {
     document.execCommand(command, false, value);
@@ -199,10 +313,75 @@ export default function EditorPage() {
   async function handleInlineImage(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Save selection range before async upload
+    if (editorRef.current) {
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        if (editorRef.current.contains(range.commonAncestorContainer)) {
+          savedRangeRef.current = range.cloneRange();
+        }
+      }
+    }
+
     try {
       const result = await uploadImage(file);
-      editorRef.current?.focus();
-      document.execCommand('insertHTML', false, `<img src="${result.url}" alt="Story Image" draggable="true" style="width: 100%; height: auto; display: block; margin: 10px auto;"><br>`);
+      
+      // Restore selection after upload completes
+      restoreSelection();
+
+      // Create the image element programmatically
+      const img = document.createElement('img');
+      img.src = result.url;
+      img.alt = 'Story Image';
+      img.setAttribute('draggable', 'true');
+      img.style.width = '100%';
+      img.style.height = 'auto';
+      img.style.display = 'block';
+      img.style.margin = '10px auto';
+
+      const br = document.createElement('br');
+
+      // Insert at selection range
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        
+        // Insert elements
+        range.insertNode(br);
+        range.insertNode(img);
+
+        // Move cursor after the br
+        const newRange = document.createRange();
+        newRange.setStartAfter(br);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        
+        // Save selection state
+        savedRangeRef.current = newRange.cloneRange();
+      }
+
+      // Ensure images are draggable
+      ensureImagesDraggable();
+
+      // Auto-select the newly inserted image to show resizer immediately!
+      setTimeout(() => {
+        setSelectedImage(img);
+        const rect = img.getBoundingClientRect();
+        const container = img.closest('.editor-container');
+        if (container) {
+          const parentRect = container.getBoundingClientRect();
+          setResizerRect({
+            top: rect.top - parentRect.top,
+            left: rect.left - parentRect.left,
+            width: rect.width,
+            height: rect.height,
+          });
+        }
+      }, 50);
     } catch (err) {
       if (err.message?.includes('expired')) {
         alert(err.message);
@@ -217,10 +396,61 @@ export default function EditorPage() {
 
   function handleInsertImageUrl() {
     const url = prompt('Enter Image URL (e.g., https://example.com/image.jpg):');
-    if (url) {
-      editorRef.current?.focus();
-      document.execCommand('insertHTML', false, `<img src="${url}" alt="Story Image" draggable="true" style="width: 100%; height: auto; display: block; margin: 10px auto;"><br>`);
+    if (!url) return;
+
+    restoreSelection();
+    
+    // Create the image element programmatically
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = 'Story Image';
+    img.setAttribute('draggable', 'true');
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+    img.style.margin = '10px auto';
+
+    const br = document.createElement('br');
+
+    // Insert at selection range
+    const sel = window.getSelection();
+    if (sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      
+      // Insert elements
+      range.insertNode(br);
+      range.insertNode(img);
+
+      // Move cursor after the br
+      const newRange = document.createRange();
+      newRange.setStartAfter(br);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      
+      // Save selection state
+      savedRangeRef.current = newRange.cloneRange();
     }
+
+    // Ensure images are draggable
+    ensureImagesDraggable();
+
+    // Auto-select the newly inserted image to show resizer immediately!
+    setTimeout(() => {
+      setSelectedImage(img);
+      const rect = img.getBoundingClientRect();
+      const container = img.closest('.editor-container');
+      if (container) {
+        const parentRect = container.getBoundingClientRect();
+        setResizerRect({
+          top: rect.top - parentRect.top,
+          left: rect.left - parentRect.left,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
+    }, 50);
   }
 
   const handleEditorClick = (e) => {
@@ -278,6 +508,21 @@ export default function EditorPage() {
         
         // Reselect the image to place the resizer overlay on it
         setSelectedImage(img);
+
+        // Update the resizer box position immediately
+        setTimeout(() => {
+          const rect = img.getBoundingClientRect();
+          const container = img.closest('.editor-container');
+          if (container) {
+            const parentRect = container.getBoundingClientRect();
+            setResizerRect({
+              top: rect.top - parentRect.top,
+              left: rect.left - parentRect.left,
+              width: rect.width,
+              height: rect.height,
+            });
+          }
+        }, 50);
       }
       draggedImageRef.current = null;
     }
@@ -301,6 +546,9 @@ export default function EditorPage() {
     const aspectRatio = (startHeight && startHeight > 0) ? startWidth / startHeight : 1;
 
     const handleMouseMove = (moveEvent) => {
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault(); // Prevent page scrolling on mobile
+      }
       const currentEvent = moveEvent.touches && moveEvent.touches.length > 0 ? moveEvent.touches[0] : moveEvent;
       if (!currentEvent) return;
 
@@ -529,7 +777,81 @@ export default function EditorPage() {
 
 
       <main className="animate-fade-in">
-        <div className="editor-container" style={{ position: 'relative' }}>
+        {/* Tab Navigation */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '15px',
+            marginBottom: '2rem',
+            borderBottom: '1px solid var(--border-color)',
+            paddingBottom: '1.2rem',
+            flexWrap: 'wrap',
+            maxWidth: '1200px',
+            margin: '0 auto 2rem auto',
+            paddingLeft: '1rem',
+            paddingRight: '1rem'
+          }}
+        >
+          <button
+            onClick={() => setActiveTab('write')}
+            className="neon-btn"
+            style={{
+              background: activeTab === 'write' ? 'var(--accent-neon)' : 'transparent',
+              color: activeTab === 'write' ? 'var(--bg-primary)' : 'inherit',
+              borderColor: activeTab === 'write' ? 'var(--accent-neon)' : 'var(--border-color)',
+              fontWeight: 'bold',
+              padding: '10px 22px',
+              fontSize: '0.95rem'
+            }}
+          >
+            📝 Write Story
+          </button>
+          <button
+            onClick={() => setActiveTab('drafts')}
+            className="neon-btn"
+            style={{
+              background: activeTab === 'drafts' ? 'var(--accent-neon)' : 'transparent',
+              color: activeTab === 'drafts' ? 'var(--bg-primary)' : 'inherit',
+              borderColor: activeTab === 'drafts' ? 'var(--accent-neon)' : 'var(--border-color)',
+              fontWeight: 'bold',
+              padding: '10px 22px',
+              fontSize: '0.95rem'
+            }}
+          >
+            💾 Server Drafts ({draftsList.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('socials')}
+            className="neon-btn"
+            style={{
+              background: activeTab === 'socials' ? 'var(--accent-neon)' : 'transparent',
+              color: activeTab === 'socials' ? 'var(--bg-primary)' : 'inherit',
+              borderColor: activeTab === 'socials' ? 'var(--accent-neon)' : 'var(--border-color)',
+              fontWeight: 'bold',
+              padding: '10px 22px',
+              fontSize: '0.95rem'
+            }}
+          >
+            🔗 Social Settings
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className="neon-btn"
+            style={{
+              background: activeTab === 'users' ? 'var(--accent-neon)' : 'transparent',
+              color: activeTab === 'users' ? 'var(--bg-primary)' : 'inherit',
+              borderColor: activeTab === 'users' ? 'var(--accent-neon)' : 'var(--border-color)',
+              fontWeight: 'bold',
+              padding: '10px 22px',
+              fontSize: '0.95rem'
+            }}
+          >
+            👥 User Management ({usersList.length})
+          </button>
+        </div>
+
+        {activeTab === 'write' && (
+          <div className="editor-container" style={{ position: 'relative' }}>
           {/* Resizer Dashed Box and Handles */}
           {resizerRect && (
             <div
@@ -785,10 +1107,77 @@ export default function EditorPage() {
             onInput={ensureImagesDraggable}
           />
         </div>
+        )}
+
+        {/* Admin Socials Settings Section */}
+        {activeTab === 'socials' && (
+          <div className="editor-container" style={{ marginTop: '0rem' }}>
+          <h3
+            className="neon-text"
+            style={{
+              fontSize: '1.4rem',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <span>🔗 Admin Social Links Settings</span>
+          </h3>
+          <div className="glass-panel" style={{ padding: '25px', borderRadius: 8, border: '1px solid rgba(234, 255, 0, 0.15)' }}>
+            <form onSubmit={handleSaveSocials} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Instagram Profile Link</label>
+                <input
+                  type="url"
+                  placeholder="https://instagram.com/username"
+                  value={instagramUrl}
+                  onChange={(e) => setInstagramUrl(e.target.value)}
+                  style={{
+                    padding: '10px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-main)'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Facebook Profile Link</label>
+                <input
+                  type="url"
+                  placeholder="https://facebook.com/username"
+                  value={facebookUrl}
+                  onChange={(e) => setFacebookUrl(e.target.value)}
+                  style={{
+                    padding: '10px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-main)'
+                  }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="neon-btn"
+                style={{ alignSelf: 'flex-start', padding: '10px 20px', marginTop: '10px' }}
+                disabled={savingSettings}
+              >
+                {savingSettings ? 'Saving Settings...' : 'Save Social Links'}
+              </button>
+            </form>
+          </div>
+        </div>
+        )}
 
         {/* Drafts List Section */}
-        {draftsList.length > 0 && (
-          <div className="editor-container" style={{ marginTop: '2rem' }}>
+        {activeTab === 'drafts' && (
+          <div className="editor-container" style={{ marginTop: '0rem' }}>
             <h3
               className="neon-text"
               style={{
@@ -804,13 +1193,18 @@ export default function EditorPage() {
                 ({draftsList.length})
               </span>
             </h3>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: 20,
-              }}
-            >
+            {draftsList.length === 0 ? (
+              <div className="glass-panel" style={{ padding: '25px', borderRadius: 8, border: '1px solid rgba(234, 255, 0, 0.15)', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                No drafts found on the server.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                  gap: 20,
+                }}
+              >
               {draftsList.map((draft) => (
                 <div
                   key={draft.id}
@@ -884,7 +1278,90 @@ export default function EditorPage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
+        )}
+        {/* Registered Users Management Section */}
+        {activeTab === 'users' && (
+          <div className="editor-container" style={{ marginTop: '0rem' }}>
+          <h3
+            className="neon-text"
+            style={{
+              fontSize: '1.4rem',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <span>👥 Registered Users Management</span>
+            {loadingUsers && <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Loading...</span>}
+          </h3>
+          <div className="glass-panel" style={{ padding: '25px', borderRadius: 8, border: '1px solid rgba(234, 255, 0, 0.15)', overflowX: 'auto' }}>
+            {usersList.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)', margin: 0 }}>No other registered users found.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '10px' }}>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>ID</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Name</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Email</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Role</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Status</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Joined Date</th>
+                    <th style={{ padding: '10px', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usersList.map((usr) => (
+                    <tr key={usr.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{usr.id}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{usr.name || 'N/A'}</td>
+                      <td style={{ padding: '10px' }}>{usr.email}</td>
+                      <td style={{ padding: '10px' }}>
+                        <span className="story-tag" style={{ fontSize: '0.75rem', padding: '3px 8px', background: usr.role === 'admin' ? 'var(--accent-neon)' : '#555', color: usr.role === 'admin' ? 'var(--bg-primary)' : 'inherit' }}>
+                          {usr.role}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <span style={{
+                          color: usr.status === 'blocked' ? '#ff4a4a' : '#2ecc71',
+                          textShadow: usr.status === 'blocked' ? '0 0 10px rgba(255,74,74,0.4)' : 'none',
+                          fontWeight: 'bold'
+                        }}>
+                          {(usr.status || 'active').toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        {new Date(usr.created_at).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'right' }}>
+                        {usr.id === getCurrentUser()?.id ? (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Logged In</span>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleBlock(usr.id, usr.email)}
+                            className="neon-btn"
+                            style={{
+                              borderColor: usr.status === 'blocked' ? '#2ecc71' : '#ff4a4a',
+                              color: usr.status === 'blocked' ? '#2ecc71' : '#ff4a4a',
+                              padding: '5px 12px',
+                              fontSize: '0.8rem',
+                              background: 'transparent'
+                            }}
+                          >
+                            {usr.status === 'blocked' ? 'Unblock' : 'Block User'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
         )}
       </main>
     </>

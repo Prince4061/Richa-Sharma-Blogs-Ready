@@ -6,7 +6,7 @@ export default function AuthModal({ onClose }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
@@ -17,9 +17,9 @@ export default function AuthModal({ onClose }) {
 
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(phone, password);
       } else {
-        await signup(email, password, name);
+        await signup(phone, password, name);
       }
       onClose();
       window.location.reload();
@@ -109,11 +109,11 @@ export default function AuthModal({ onClose }) {
           )}
 
           <input
-            type="email"
-            placeholder="Email Address"
+            type="text"
+            placeholder="Mobile Number"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
             className="auth-input"
           />
 

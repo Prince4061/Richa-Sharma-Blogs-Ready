@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import StoryCard from '../components/StoryCard';
-import { getPosts, getBookmarks } from '../services/api';
+import { getPosts, getBookmarks, getAdminProfile } from '../services/api';
 import { getCurrentUser } from '../services/auth';
 
 const CATEGORIES = [
@@ -15,20 +15,23 @@ const CATEGORIES = [
 export default function HomePage() {
   const [data, setData] = useState({});
   const [bookmarks, setBookmarks] = useState([]);
+  const [profile, setProfile] = useState({ facebook_url: '', instagram_url: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchAll() {
       try {
-        const results = await Promise.all(
-          CATEGORIES.map((cat) => getPosts(cat.key))
-        );
+        const results = await Promise.all([
+          ...CATEGORIES.map((cat) => getPosts(cat.key)),
+          getAdminProfile().catch(() => ({ facebook_url: '', instagram_url: '' }))
+        ]);
         const dataMap = {};
         CATEGORIES.forEach((cat, i) => {
           dataMap[cat.key] = results[i];
         });
         setData(dataMap);
+        setProfile(results[CATEGORIES.length] || { facebook_url: '', instagram_url: '' });
 
         const user = getCurrentUser();
         if (user) {
@@ -78,8 +81,16 @@ export default function HomePage() {
               Richa <span className="neon-text-accent">Sharma</span>
             </h3>
             <div className="hero-socials">
-              <a href="#" target="_blank" rel="noreferrer" className="social-btn">Instagram</a>
-              <a href="#" target="_blank" rel="noreferrer" className="social-btn">Facebook</a>
+              {profile.instagram_url ? (
+                <a href={profile.instagram_url} target="_blank" rel="noreferrer" className="social-btn">Instagram</a>
+              ) : (
+                <a href="#" className="social-btn" onClick={(e) => e.preventDefault()}>Instagram</a>
+              )}
+              {profile.facebook_url ? (
+                <a href={profile.facebook_url} target="_blank" rel="noreferrer" className="social-btn">Facebook</a>
+              ) : (
+                <a href="#" className="social-btn" onClick={(e) => e.preventDefault()}>Facebook</a>
+              )}
             </div>
           </div>
         </div>
@@ -126,35 +137,7 @@ export default function HomePage() {
         </section>
       ))}
 
-      {/* Archives Section */}
-      <section id="history" style={{ marginTop: '5rem' }}>
-        <h2 className="section-title">From the Archives</h2>
-        <div className="story-grid" style={{ opacity: 0.8 }}>
-          <article
-            className="story-card animate-fade-in"
-            onClick={() => (window.location.href = '/story/4')}
-          >
-            <div
-              className="story-image"
-              style={{
-                backgroundImage:
-                  "url('https://images.unsplash.com/photo-1476842634003-7dcca8f832de?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80')",
-              }}
-            />
-            <div className="story-content">
-              <span className="story-tag" style={{ backgroundColor: '#555' }}>Classic</span>
-              <h3 className="story-title">The First Drafts</h3>
-              <p className="story-excerpt">
-                Looking back at where it all began, the messy scribbles that turned into complete novels.
-              </p>
-              <div className="story-meta">
-                <span>Dec 15, 2025</span>
-                <span>4 min read</span>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
+
     </main>
   );
 }

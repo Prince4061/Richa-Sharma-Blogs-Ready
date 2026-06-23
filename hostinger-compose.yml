@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  richa-blog:
+    image: ${DOCKER_HUB_IMAGE:-richa-blog:latest}
+    container_name: richa_blog_app
+    restart: always
+    ports:
+      - "80:5000"
+    environment:
+      - SECRET_KEY=change_this_to_a_secure_random_key_98765
+      - DATABASE_PATH=/app/backend/data/database.db
+      - UPLOAD_FOLDER=/app/backend/data/uploads
+    volumes:
+      - richa_blog_data:/app/backend/data
+
+volumes:
+  richa_blog_data:
+    driver: local
